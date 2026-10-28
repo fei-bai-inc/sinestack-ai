@@ -80,11 +80,12 @@ function terminalRecorder(events) {
   };
 }
 
-function rejectWhenAborted(signal) {
+async function rejectWhenAborted(signal) {
   signal.throwIfAborted();
-  return new Promise((_, reject) => {
-    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-  });
+  // Model in-flight I/O with a referenced timer: AbortSignal.timeout alone
+  // does not keep Node's event loop alive. Cancellation clears this timer.
+  await sleep(TEST_TIMEOUT, undefined, { signal });
+  assert.fail('The cooperative provider did not receive cancellation');
 }
 
 function assertSingleIdempotencyHeader(options, expected) {
