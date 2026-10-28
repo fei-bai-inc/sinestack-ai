@@ -2,7 +2,6 @@ import { createDownload, DefaultGeneratedFile, type GeneratedFile } from 'ai';
 import { convertBase64ToUint8Array } from '@ai-sdk/provider-utils';
 import type { AssetFile } from '@sine-ai/provider';
 import { httpURL, validateFile } from './internal/validation.js';
-import { withSignal } from './internal/abort.js';
 
 export interface MaterializeAssetOptions {
   /** Applies to downloads and inline data. Defaults to 64 MiB. */
@@ -18,11 +17,12 @@ export async function materializeAsset(asset: AssetFile, options: MaterializeAss
   const maxBytes = options.maxBytes ?? 64 * 1024 * 1024;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new TypeError('maxBytes must be a positive safe integer');
   const signal = options.abortSignal ?? new AbortController().signal;
-  if (signal.aborted) throw signal.reason;
+  signal.throwIfAborted();
   let data: Uint8Array;
   if (asset.type === 'url') {
     const download = options.download ?? createDownload({ maxBytes });
-    const result = await withSignal(() => download({ url: httpURL(asset.url, 'Asset URL'), abortSignal: signal }), signal);
+    const result = await download({ url: httpURL(asset.url, 'Asset URL'), abortSignal: signal });
+    signal.throwIfAborted();
     data = result.data;
   } else if (asset.type === 'binary') {
     data = asset.data;

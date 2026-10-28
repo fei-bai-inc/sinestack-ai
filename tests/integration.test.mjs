@@ -10,7 +10,7 @@ import {
 
 const BASE = 'https://queue.fal.run';
 const API_KEY = 'fake-integration-key';
-const fastRetry = { status: 2, initialDelayMs: 0, maxDelayMs: 0 };
+const retry = { status: 2 };
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -55,11 +55,10 @@ for (const scenario of cases) {
     const calls = [];
     const lifecycle = [];
     const hookEvents = [];
-    const retryEvents = [];
     let statusReads = 0;
     let pollDelays = 0;
     let startHookSettled = false;
-    let operationSaved;
+    let observedOperation;
     let finishResult;
 
     const fakeFetch = async (url, init) => {
@@ -76,11 +75,11 @@ for (const scenario of cases) {
         assert.deepEqual(JSON.parse(call.body), scenario.wireInput);
         return json(submitted, 202);
       }
-      assert.ok(operationSaved, 'The shared onOperation hook must save the handle before polling.');
+      assert.ok(observedOperation, 'The shared onOperation observation must finish before polling.');
       if (call.url === submitted.status_url) {
         statusReads++;
         switch (statusReads) {
-          case 1: return json({ detail: 'Rate limit: retry this status read' }, 429, { 'retry-after': '0' });
+          case 1: return json({ detail: 'Rate limit: retry this status read' }, 429, { 'retry-after-ms': '0' });
           case 2: return json({ status: 'IN_QUEUE', request_id: requestId, queue_position: 1 });
           case 3: return json({ status: 'IN_PROGRESS', request_id: requestId, logs: [{ message: 'Generating asset' }] });
           case 4: return json({ status: 'COMPLETED', request_id: requestId, response_url: submitted.response_url });
@@ -98,25 +97,19 @@ for (const scenario of cases) {
         await Promise.resolve();
         startHookSettled = true;
       },
-      onAttempt(event) { remember(`attempt:${event.phase}:${event.attemptNumber}`, event); },
-      onRetry(event) {
-        remember(`retry:${event.phase}:${event.attemptNumber}`, event);
-        retryEvents.push(event);
-      },
       async onOperation(event) {
         remember('operation', event);
         await Promise.resolve();
-        operationSaved = JSON.parse(JSON.stringify(event.operation));
+        observedOperation = event.operation;
       },
       onProgress(event) { remember(`progress:${event.status}`, event); },
       onFinish(event) { remember('finish', event); finishResult = event.result; },
       onError(event) { remember('error', event); },
-      onAbort(event) { remember('abort', event); },
     };
 
     const result = await scenario.generate({
       model: scenario.model(fal), ...scenario.input,
-      timeoutMs: 2_000, retry: fastRetry, hooks,
+      timeoutMs: 2_000, retry, hooks,
       poll: {
         intervalMs: 0, timeoutMs: 1_500,
         async delay(_milliseconds, { abortSignal }) {
@@ -130,28 +123,24 @@ for (const scenario of cases) {
     assert.equal(statusReads, 4, 'The query is retried once and then polling follows the existing job.');
     assert.equal(calls.filter(call => call.url === submitted.response_url).length, 1);
     assert.equal(pollDelays, 2);
-    assert.deepEqual(lifecycle, [
-      'start', 'attempt:start:1', 'operation',
-      'attempt:status:1', 'retry:status:1', 'attempt:status:2', 'progress:pending',
-      'attempt:status:1', 'progress:running', 'attempt:status:1', 'finish',
-    ]);
-    assert.equal(retryEvents.length, 1);
-    assert.equal(retryEvents[0].phase, 'status');
-    assert.equal(retryEvents[0].delayMs, 0);
-    assert.ok(APICallError.isInstance(retryEvents[0].error));
-    assert.equal(retryEvents[0].error.statusCode, 429);
+    assert.deepEqual(lifecycle, ['start', 'operation', 'progress:pending', 'progress:running', 'finish']);
+    // Observation callbacks swallow their own errors. Keep contract assertions outside them.
+    assert.ok(hookEvents.every(event => typeof event.callId === 'string' && event.callId.length > 0));
     assert.equal(new Set(hookEvents.map(event => event.callId)).size, 1);
-    assert.ok(hookEvents.every(event => event.kind === scenario.kind && event.provider === 'fal' && event.api === 'generateAsset'));
+    assert.ok(hookEvents.every(event => event.kind === scenario.kind && event.provider === 'fal' && event.modelId === scenario.modelId && event.api === 'generateAsset'));
     assert.equal(result.assets.length, scenario.assetCount);
     assert.equal(result.asset.type, 'url');
     assert.equal(result.asset.url, scenario.assetURL);
     assert.equal(result.asset.mediaType, scenario.mediaType);
     assert.equal(finishResult, result);
-    assert.deepEqual(result.operation, operationSaved);
+    assert.equal(result.operation, observedOperation);
+    assert.equal(Object.isFrozen(observedOperation), true);
+    assert.equal(Object.isFrozen(observedOperation.operation), true);
+    assert.ok(hookEvents.filter(event => event.operation !== undefined).every(event => event.operation === observedOperation));
     assert.equal(result.operation.kind, scenario.kind);
     assert.equal(result.operation.operation.requestId, requestId);
     assert.equal(result.responses.length, 2, 'Submission and final result response metadata remain available.');
-    assert.equal(JSON.stringify(operationSaved).includes(API_KEY), false);
+    assert.equal(JSON.stringify(observedOperation).includes(API_KEY), false);
     assert.ok(calls.every(call => new URL(call.url).origin === BASE), 'URL assets must not be implicitly downloaded.');
     assert.equal(network.mock.callCount(), 0);
   });
@@ -161,7 +150,6 @@ test('a fal job resumes through the real core from persisted JSON and a fresh pr
   const network = t.mock.method(globalThis, 'fetch', () => assert.fail('No network is allowed.'));
   const submitted = accepted(FAL_THREE_D_MODEL, 'persisted-job');
   let submissions = 0;
-  let savedJSON;
   const submissionProvider = createFalAssetProvider({
     apiKey: API_KEY,
     async fetch(url, init) {
@@ -171,10 +159,11 @@ test('a fal job resumes through the real core from persisted JSON and a fresh pr
       return json(submitted, 202);
     },
   });
-  await startAsset({
+  const started = await startAsset({
     model: submissionProvider.threeD(), input: { prompt: 'A bronze lantern' },
-    hooks: { onOperation({ operation }) { savedJSON = JSON.stringify(operation); } },
   });
+  // Critical persistence is explicit application work, outside best-effort observation callbacks.
+  const savedJSON = JSON.stringify(started.operation);
   const reads = [];
   let statusReads = 0;
   const resumedProvider = createFalAssetProvider({
@@ -192,7 +181,7 @@ test('a fal job resumes through the real core from persisted JSON and a fresh pr
   });
   const result = await waitForAsset({
     model: resumedProvider.threeD(), operation: JSON.parse(savedJSON),
-    poll: { intervalMs: 0, delay: async () => {} }, retry: fastRetry,
+    poll: { intervalMs: 0, delay: async () => {} }, retry,
   });
   assert.equal(submissions, 1);
   assert.deepEqual(reads, [submitted.status_url, submitted.status_url, submitted.response_url]);
@@ -205,6 +194,7 @@ test('a transient fal submission failure is not retried by the real core status 
   const network = t.mock.method(globalThis, 'fetch', () => assert.fail('No network is allowed.'));
   let submissions = 0;
   const terminals = [];
+  const errors = [];
   const fal = createFalAssetProvider({
     apiKey: API_KEY,
     async fetch(_url, init) {
@@ -215,12 +205,10 @@ test('a transient fal submission failure is not retried by the real core status 
   });
   await assert.rejects(generateSoundEffect({
     model: fal.soundEffect(), prompt: 'A short bell',
-    retry: { ...fastRetry, status: 5 },
+    retry: { status: 5 },
     hooks: {
-      onRetry() { assert.fail('fal does not guarantee submission idempotency.'); },
       onFinish() { terminals.push('finish'); },
-      onAbort() { terminals.push('abort'); },
-      onError(event) { terminals.push('error'); assert.equal(event.phase, 'start'); },
+      onError(event) { terminals.push('error'); errors.push(event); },
     },
   }), error => {
     assert.equal(error.phase, 'start');
@@ -230,5 +218,6 @@ test('a transient fal submission failure is not retried by the real core status 
   });
   assert.equal(submissions, 1);
   assert.deepEqual(terminals, ['error']);
+  assert.equal(errors[0].phase, 'start');
   assert.equal(network.mock.callCount(), 0);
 });

@@ -7,8 +7,7 @@
 import type { AssetModelV1, AssetModelV1CancelResult, AssetOperation, SoundEffectInput, ThreeDInput } from '@sine-ai/provider';
 import { AssetExecutionError } from './errors.js';
 import { attempt, completed, execute, observeWebhook, query, submissionHeaders, submit, wait } from './internal/executor.js';
-import { milliseconds, withSignal } from './internal/abort.js';
-import { httpURL } from './internal/validation.js';
+import { httpURL, milliseconds } from './internal/validation.js';
 import type {
   AssetOperationOptions, AssetPollOptions, GenerateAssetOptions, GenerateAssetResult,
   GetAssetStatusResult, StartAssetOptions, StartAssetResult, WaitForAssetOptions,
@@ -36,9 +35,10 @@ export function generateAsset<INPUT, KIND extends string>(options: GenerateAsset
       if (options.webhook) {
         if (model.capabilities?.webhooks === true) {
           ctx.phase = 'webhook';
-          const webhook = await withSignal(() => options.webhook!(), ctx.signal);
+          const webhook = await options.webhook();
           // Observe the receiver before validating the URL or starting a job.
           received = observeWebhook(webhook.received);
+          ctx.signal.throwIfAborted();
           webhookUrl = httpURL(webhook.url, 'Webhook URL').toString();
         } else {
           ctx.warnings.push({ type: 'other', message: 'The model does not support webhooks; using polling without invoking the webhook factory.' });

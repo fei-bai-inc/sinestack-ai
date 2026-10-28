@@ -1,5 +1,11 @@
 import type { AssetFile, AssetModelV1, AssetModelV1Result, AssetModelV1Status, AssetOperation, JSONValue } from '@sine-ai/provider';
 
+export function milliseconds(value: number | undefined, name: string, allowZero = false): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1) || value > 2_147_483_647)) {
+    throw new TypeError(`${name} must be a ${allowZero ? 'non-negative' : 'positive'} integer at most 2147483647`);
+  }
+}
+
 export function assertJSONValue(value: unknown, seen = new Set<object>(), depth = 0): asserts value is JSONValue {
   if (depth > 64) throw new TypeError('Operation exceeds the maximum JSON nesting depth');
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;

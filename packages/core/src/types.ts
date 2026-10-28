@@ -16,15 +16,13 @@ export interface AssetEvent {
   readonly operation?: AssetOperation;
 }
 
+/** Observation callbacks follow AI SDK mergeCallbacks: awaited, errors ignored. */
 export interface AssetHooks {
   onStart?(event: AssetEvent): void | PromiseLike<void>;
-  onAttempt?(event: AssetEvent & { phase: AssetPhase; attemptNumber: number }): void | PromiseLike<void>;
-  onRetry?(event: AssetEvent & { phase: AssetPhase; attemptNumber: number; delayMs: number; error: unknown }): void | PromiseLike<void>;
   onOperation?(event: AssetEvent & { operation: AssetOperation }): void | PromiseLike<void>;
   onProgress?(event: AssetEvent & { status: 'pending' | 'running'; progress?: number; message?: string }): void | PromiseLike<void>;
   onFinish?(event: AssetEvent & { result: unknown }): void | PromiseLike<void>;
   onError?(event: AssetEvent & { error: Error; phase?: AssetPhase }): void | PromiseLike<void>;
-  onAbort?(event: AssetEvent & { error: Error; phase?: AssetPhase }): void | PromiseLike<void>;
 }
 
 export interface AssetRetryOptions {
@@ -36,13 +34,11 @@ export interface AssetRetryOptions {
   status?: number;
   /** Defaults to 0. The caller must know repeated cancellation is safe. */
   cancel?: number;
-  initialDelayMs?: number;
-  maxDelayMs?: number;
 }
 
 export interface AssetExecutionOptions {
   abortSignal?: AbortSignal;
-  /** Deadline for this whole public invocation, including hooks and submission. */
+  /** Adds an SDK timeout signal. Providers must honor it; callbacks must settle. */
   timeoutMs?: number;
   headers?: Record<string, string>;
   retry?: AssetRetryOptions;
@@ -52,9 +48,9 @@ export interface AssetExecutionOptions {
 export interface AssetPollOptions {
   /** Defaults to 2 seconds; the first status check is immediate. */
   intervalMs?: number;
-  /** Defaults to 10 minutes; includes in-flight queries and webhook finalization. */
+  /** Defaults to 10 minutes. The timeout signal is also passed to status requests. */
   timeoutMs?: number;
-  /** Replaces polling sleeps only, not the host runtime or its deadlines. */
+  /** Replaces polling sleeps only; must honor abortSignal. */
   delay?: (milliseconds: number, options: { abortSignal: AbortSignal }) => PromiseLike<void>;
 }
 

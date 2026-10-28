@@ -1,23 +1,21 @@
 /**
  * Adapted from AI SDK 7.0.155's video start/status orchestration and retry policy.
  * Copyright 2023 Vercel, Inc. Copyright 2026 Sine AI contributors.
- * Changes: one shared lifecycle for all asset kinds, phase-safe retries, resumable
- * operation envelopes, hook isolation from retries, and bounded completion waits.
+ * Changes: asset operation envelopes and result mapping; retry, signal and
+ * callback policies are delegated to the pinned AI SDK implementation.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { APICallError } from '@ai-sdk/provider';
-import { delay, generateId, retryWithExponentialBackoff, withUserAgentSuffix } from '@ai-sdk/provider-utils';
-import { RetryError } from 'ai';
+import { delay, generateId, withUserAgentSuffix } from '@ai-sdk/provider-utils';
 import type {
   AssetModelV1, AssetModelV1Result, AssetOperation, AssetResponse, SharedV4Warning,
 } from '@sine-ai/provider';
-import { AssetAbortError, AssetExecutionError, AssetHookError, AssetTimeoutError } from '../errors.js';
+import { AssetAbortError, AssetExecutionError, AssetTimeoutError } from '../errors.js';
 import type {
   AssetAPI, AssetEvent, AssetExecutionOptions, AssetHooks, AssetPhase, AssetPollOptions,
   GenerateAssetResult, StartAssetResult,
 } from '../types.js';
-import { abortReason, checkSignal, milliseconds, signalScope, withSignal } from './abort.js';
-import { snapshotOperation, validateModel, validateResult, validateStatus } from './validation.js';
+import { mergeAbortSignals, mergeCallbacks, prepareRetries } from './sdk.js';
+import { milliseconds, snapshotOperation, validateModel, validateResult, validateStatus } from './validation.js';
 
 export interface ExecutionContext<INPUT, KIND extends string> {
   model: AssetModelV1<INPUT, KIND>;
@@ -45,26 +43,13 @@ export function event<INPUT, KIND extends string>(ctx: ExecutionContext<INPUT, K
 
 export async function notify<INPUT, KIND extends string, NAME extends HookName>(
   ctx: ExecutionContext<INPUT, KIND>, name: NAME, payload: HookPayload<NAME>,
-  signal: AbortSignal | null = ctx.signal,
 ): Promise<void> {
   const hook = ctx.options.hooks?.[name] as ((value: HookPayload<NAME>) => void | PromiseLike<void>) | undefined;
-  if (!hook) return;
-  try {
-    if (signal) await withSignal(() => hook(payload), signal);
-    else await hook(payload);
-  } catch (cause) {
-    if (signal?.aborted && name !== 'onFinish') throw abortReason(signal);
-    throw new AssetHookError(name, cause, {
-      phase: ctx.phase, operation: ctx.operation,
-      result: name === 'onFinish' ? (payload as AssetEvent & { result: unknown }).result : undefined,
-      executionError: name === 'onError' || name === 'onAbort' ? (payload as AssetEvent & { error: unknown }).error : undefined,
-    });
-  }
+  await mergeCallbacks(hook)(payload);
 }
 
 function failure<INPUT, KIND extends string>(error: unknown, ctx: ExecutionContext<INPUT, KIND>): Error {
-  if (error instanceof AssetHookError) return error;
-  const cause = ctx.signal.aborted ? abortReason(ctx.signal) : error;
+  const cause = ctx.signal.aborted ? ctx.signal.reason : error;
   const name = cause instanceof Error ? cause.name : undefined;
   const message = cause instanceof Error ? cause.message : String(cause);
   const details = { cause, phase: ctx.phase, operation: ctx.operation };
@@ -79,66 +64,34 @@ export async function execute<INPUT, KIND extends string, RESULT>(
   initialOperation?: AssetOperation<KIND>,
 ): Promise<RESULT> {
   validateModel(model);
-  validateRetryOptions(options);
+  // Validate all configured phases before any billable submission, using the
+  // same validation as AI SDK. The SDK owns backoff and retryable-error policy.
+  for (const phase of ['generate', 'start', 'status', 'cancel'] as const) {
+    prepareRetries({ maxRetries: options.retry?.[phase], abortSignal: options.abortSignal, parameter: `retry.${phase}` });
+  }
+  milliseconds(options.timeoutMs, 'timeoutMs');
   // Detach a restored handle before the first await or user callback. A valid
-  // handle must be available even when onStart fails or the signal is aborted.
+  // handle must be available even when the signal is already aborted.
   const operation = initialOperation === undefined ? undefined : snapshotOperation(model, initialOperation);
-  const scope = signalScope([options.abortSignal], options.timeoutMs);
   const ctx: ExecutionContext<INPUT, KIND> = {
-    model, options, api, callId: `asset_${generateId()}`, signal: scope.signal,
+    model, options, api, callId: `asset_${generateId()}`,
+    signal: mergeAbortSignals(options.abortSignal, options.timeoutMs) ?? new AbortController().signal,
     headers: withUserAgentSuffix(options.headers ?? {}, 'sine-ai/0.1.0'), warnings: [], responses: [],
     ...(operation ? { operation } : {}),
   };
-  let terminal = false;
   try {
-    checkSignal(ctx.signal);
+    ctx.signal.throwIfAborted();
     await notify(ctx, 'onStart', event(ctx));
+    ctx.signal.throwIfAborted();
     const result = await body(ctx);
-    checkSignal(ctx.signal);
-    // Select the terminal BEFORE invoking user code, so a failed onFinish
-    // cannot trigger onError or repeat provider work.
-    terminal = true;
+    ctx.signal.throwIfAborted();
     await notify(ctx, 'onFinish', { ...event(ctx), result });
     return result;
   } catch (error) {
     const resolved = failure(error, ctx);
-    if (!terminal) {
-      terminal = true;
-      const hook = resolved.name === 'AbortError' || resolved.name === 'TimeoutError' ? 'onAbort' : 'onError';
-      // Terminal cleanup notifications remain callable after cancellation.
-      // They are awaited; callers must ensure cleanup hooks settle promptly.
-      await notify(ctx, hook, { ...event(ctx), error: resolved, phase: ctx.phase }, null);
-    }
+    await notify(ctx, 'onError', { ...event(ctx), error: resolved, phase: ctx.phase });
     throw resolved;
-  } finally {
-    scope.dispose();
   }
-}
-
-function validateRetryOptions(options: AssetExecutionOptions): void {
-  for (const phase of ['generate', 'start', 'status', 'cancel'] as const) {
-    const value = options.retry?.[phase];
-    if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 100)) throw new TypeError(`retry.${phase} must be an integer between 0 and 100`);
-  }
-  milliseconds(options.retry?.initialDelayMs, 'retry.initialDelayMs', true);
-  milliseconds(options.retry?.maxDelayMs, 'retry.maxDelayMs', true);
-}
-
-function retryDelay(error: unknown, fallback: number, maxDelay: number): number {
-  const headers = APICallError.isInstance(error) ? error.responseHeaders : undefined;
-  let proposed: number | undefined;
-  if (headers) {
-    const normalized = new Headers(headers);
-    const millisecondsHeader = normalized.get('retry-after-ms');
-    const secondsHeader = normalized.get('retry-after');
-    if (millisecondsHeader?.trim()) proposed = Number(millisecondsHeader);
-    if (!Number.isFinite(proposed) && secondsHeader?.trim()) {
-      const seconds = Number(secondsHeader);
-      proposed = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(secondsHeader) - Date.now();
-    }
-  }
-  return proposed !== undefined && Number.isFinite(proposed) && proposed >= 0 && proposed <= maxDelay
-    ? proposed : Math.min(fallback, maxDelay);
 }
 
 export async function attempt<INPUT, KIND extends string, RESULT>(
@@ -146,33 +99,17 @@ export async function attempt<INPUT, KIND extends string, RESULT>(
   signal: AbortSignal, action: () => RESULT | PromiseLike<RESULT>,
 ): Promise<RESULT> {
   ctx.phase = phase;
-  const retries = ctx.options.retry?.[phase] ?? (phase === 'status' ? 2 : 0);
-  if (retries > 0 && ((phase === 'start' && ctx.model.capabilities?.idempotentStart !== true) || (phase === 'generate' && ctx.model.capabilities?.idempotentGenerate !== true))) {
+  const { maxRetries, retry } = prepareRetries({
+    maxRetries: ctx.options.retry?.[phase], abortSignal: signal,
+    parameter: `retry.${phase}`, defaultMaxRetries: phase === 'status' ? 2 : 0,
+  });
+  if (maxRetries > 0 && ((phase === 'start' && ctx.model.capabilities?.idempotentStart !== true) || (phase === 'generate' && ctx.model.capabilities?.idempotentGenerate !== true))) {
     throw new AssetExecutionError(`retry.${phase} requires the model to declare idempotent ${phase} support`, { code: 'ASSET_UNSAFE_RETRY', phase, operation: ctx.operation });
   }
-  let attemptNumber = 0;
-  const initialDelay = ctx.options.retry?.initialDelayMs ?? 2000;
-  const maxDelay = ctx.options.retry?.maxDelayMs ?? 60_000;
-  const retry = retryWithExponentialBackoff({
-    maxRetries: retries, initialDelayInMs: initialDelay, abortSignal: signal,
-    shouldRetry: async error => {
-      if (signal.aborted || !APICallError.isInstance(error) || !error.isRetryable) return false;
-      const delayMs = retryDelay(error, initialDelay * 2 ** (attemptNumber - 1), maxDelay);
-      await notify(ctx, 'onRetry', { ...event(ctx), phase, attemptNumber, delayMs, error }, signal);
-      return true;
-    },
-    getDelayInMs: ({ error, exponentialBackoffDelay }) => retryDelay(error, exponentialBackoffDelay, maxDelay),
-    createRetryError: options => {
-      const lastError = options.errors.at(-1);
-      return lastError instanceof AssetHookError ? lastError : new RetryError(options);
-    },
+  return await retry(async () => {
+    signal.throwIfAborted();
+    return await action();
   });
-  return await withSignal(() => retry(async () => {
-    checkSignal(signal);
-    attemptNumber++;
-    await notify(ctx, 'onAttempt', { ...event(ctx), phase, attemptNumber }, signal);
-    return await withSignal(action, signal);
-  }), signal);
 }
 
 /** One key per logical provider invocation, outside the retry closure. */
@@ -195,7 +132,7 @@ export async function submit<INPUT, KIND extends string>(
     input, providerOptions, abortSignal: ctx.signal, ...submission,
     headers: { ...submission.headers }, ...(webhookUrl ? { webhookUrl } : {}),
   }));
-  // Validation and hooks are deliberately OUTSIDE retry: a provider may
+  // Result validation is deliberately OUTSIDE retry: a provider may
   // already have accepted a billable job even when its response is malformed.
   const operation = snapshotOperation(ctx.model, {
     specificationVersion: 'v1', provider: ctx.model.provider,
@@ -221,9 +158,9 @@ export async function query<INPUT, KIND extends string>(ctx: ExecutionContext<IN
       ...event(ctx), status: status.status,
       ...(status.progress !== undefined ? { progress: status.progress } : {}),
       ...(status.message !== undefined ? { message: status.message } : {}),
-    }, signal);
+    });
   }
-  checkSignal(signal);
+  signal.throwIfAborted();
   return { ...status, operation };
 }
 
@@ -248,30 +185,34 @@ export async function wait<INPUT, KIND extends string>(
   ctx: ExecutionContext<INPUT, KIND>, poll: AssetPollOptions = {}, webhook?: Promise<unknown>,
 ): Promise<GenerateAssetResult<KIND>> {
   const intervalMs = poll.intervalMs ?? 2000;
-  milliseconds(intervalMs, 'poll.intervalMs', true);
-  const scope = signalScope([ctx.signal], poll.timeoutMs ?? 600_000);
-  try {
-    if (webhook) {
-      ctx.phase = 'webhook';
-      await withSignal(() => webhook, scope.signal);
+  const timeoutMs = poll.timeoutMs ?? 600_000;
+  ctx.signal = mergeAbortSignals(ctx.signal, timeoutMs)!;
+  if (webhook) {
+    ctx.phase = 'webhook';
+    // Like AI SDK's private video webhook flow, only the notification needs
+    // a local race. Provider calls and callbacks use cooperative cancellation.
+    const timer = new AbortController();
+    try {
+      await Promise.race([
+        webhook,
+        delay(timeoutMs, { abortSignal: mergeAbortSignals(ctx.signal, timer.signal) }).then(() => {
+          throw new DOMException('Asset webhook timed out', 'TimeoutError');
+        }),
+      ]);
+    } finally {
+      timer.abort();
     }
-    for (;;) {
-      const status = await query(ctx, scope.signal);
-      switch (status.status) {
-        case 'completed': {
-          const result = completed(ctx, status.result);
-          checkSignal(scope.signal);
-          return result;
-        }
-        case 'failed': throw new AssetExecutionError(status.error.message, { code: 'ASSET_JOB_FAILED', phase: 'status', operation: ctx.operation });
-        case 'cancelled': throw new AssetAbortError(status.message ?? 'Remote asset operation was cancelled', { operation: ctx.operation, phase: 'status' });
-        default:
-          if (webhook) throw new AssetExecutionError('Webhook resolved but the asset operation is not terminal', { code: 'ASSET_WEBHOOK_NOT_TERMINAL', phase: 'status', operation: ctx.operation });
-      }
-      ctx.phase = 'wait';
-      await withSignal(() => (poll.delay ?? delay)(intervalMs, { abortSignal: scope.signal }), scope.signal);
+  }
+  for (;;) {
+    const status = await query(ctx, ctx.signal);
+    switch (status.status) {
+      case 'completed': return completed(ctx, status.result);
+      case 'failed': throw new AssetExecutionError(status.error.message, { code: 'ASSET_JOB_FAILED', phase: 'status', operation: ctx.operation });
+      case 'cancelled': throw new AssetAbortError(status.message ?? 'Remote asset operation was cancelled', { operation: ctx.operation, phase: 'status' });
+      default:
+        if (webhook) throw new AssetExecutionError('Webhook resolved but the asset operation is not terminal', { code: 'ASSET_WEBHOOK_NOT_TERMINAL', phase: 'status', operation: ctx.operation });
     }
-  } finally {
-    scope.dispose();
+    ctx.phase = 'wait';
+    await (poll.delay ?? delay)(intervalMs, { abortSignal: ctx.signal });
   }
 }

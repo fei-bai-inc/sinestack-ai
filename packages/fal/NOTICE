@@ -10,7 +10,7 @@ Licensed under the Apache License, Version 2.0.
 
 The @ai-sdk/provider and @ai-sdk/provider-utils dependencies retain their
 own copyright and license notices. The fal adapter implements the Sine AI
-single-operation provider contract; polling, retries, and lifecycle hooks
-are owned by @sine-ai/core.
+single-operation provider contract. Asset polling belongs to @sine-ai/core;
+retry, signal composition, and callback behavior delegate to AI SDK helpers.
 
 https://github.com/fei-bai-inc/sine-ai

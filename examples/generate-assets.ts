@@ -8,7 +8,7 @@ import { createFalAssetProvider } from '@sine-ai/fal';
 
 export interface GenerateGameAssetsOptions {
   abortSignal?: AbortSignal;
-  /** The same lifecycle contract applies to both assets; event.kind identifies each one. */
+  /** Observation only: callback errors are ignored. event.kind identifies each asset. */
   hooks?: AssetHooks;
 }
 
@@ -20,7 +20,7 @@ export async function generateGameAssets(options: GenerateGameAssetsOptions = {}
     abortSignal: options.abortSignal,
     hooks: options.hooks,
     // Failed status reads can be retried. fal submissions are not retried by default.
-    retry: { status: 2, initialDelayMs: 500, maxDelayMs: 5_000 },
+    retry: { status: 2 },
   };
 
   const [threeD, soundEffect] = await Promise.all([

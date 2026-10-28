@@ -8,6 +8,8 @@ import {
   waitForAsset,
 } from '@sine-ai/core';
 import type {
+  AssetHooks,
+  AssetRetryOptions,
   GenerateAssetResult,
   GetAssetStatusResult,
   StartAssetResult,
@@ -19,6 +21,8 @@ import type {
   ThreeDInput,
 } from '@sine-ai/provider';
 import type { GeneratedFile } from 'ai';
+// @ts-expect-error Observation hook failures no longer have a custom exported error class.
+import type { AssetHookError } from '@sine-ai/core';
 
 declare function expectType<T>(value: T): void;
 
@@ -109,3 +113,24 @@ expectType<Promise<GeneratedFile>>(materializeAsset({
   data: new Uint8Array([1, 2, 3]),
   mediaType: 'application/octet-stream',
 }));
+
+const observationHooks: AssetHooks = {
+  async onStart(event) { expectType<string>(event.callId); },
+  onOperation(event) { expectType<AssetOperation>(event.operation); },
+  onProgress(event) { expectType<'pending' | 'running'>(event.status); },
+  onFinish(event) { expectType<unknown>(event.result); },
+  onError(event) { expectType<Error>(event.error); },
+};
+const retryCounts: AssetRetryOptions = { start: 0, generate: 0, status: 2, cancel: 0 };
+generate3D({ model: threeD, prompt: 'Chair', hooks: observationHooks, retry: retryCounts });
+
+// @ts-expect-error Per-attempt lifecycle hooks were removed in favor of SDK retry semantics.
+const removedAttemptHook: AssetHooks = { onAttempt() {} };
+// @ts-expect-error Per-retry lifecycle hooks were removed in favor of SDK retry semantics.
+const removedRetryHook: AssetHooks = { onRetry() {} };
+// @ts-expect-error Cancellation is observed through onError, not a separate terminal callback.
+const removedAbortHook: AssetHooks = { onAbort() {} };
+// @ts-expect-error AI SDK owns the initial backoff delay.
+const removedInitialDelay: AssetRetryOptions = { initialDelayMs: 0 };
+// @ts-expect-error AI SDK owns the maximum delay policy.
+const removedMaximumDelay: AssetRetryOptions = { maxDelayMs: 1_000 };

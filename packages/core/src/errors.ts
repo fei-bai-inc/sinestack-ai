@@ -27,17 +27,3 @@ export class AssetAbortError extends AssetExecutionError {
     this.name = 'AbortError';
   }
 }
-
-export class AssetHookError extends AssetExecutionError {
-  readonly hook: string;
-  /** A completed result remains recoverable when onFinish fails. */
-  readonly result?: unknown;
-  readonly executionError?: unknown;
-  constructor(hook: string, cause: unknown, options: { operation?: AssetOperation; result?: unknown; executionError?: unknown; phase?: AssetPhase } = {}) {
-    super(`Asset hook ${hook} failed`, { ...options, cause, code: 'ASSET_HOOK_ERROR' });
-    this.name = 'AssetHookError';
-    this.hook = hook;
-    this.result = options.result;
-    this.executionError = options.executionError;
-  }
-}

@@ -32,19 +32,25 @@ export async function submit3DTask(
   store: OperationStore,
   options: { webhookUrl?: string; abortSignal?: AbortSignal } = {},
 ) {
-  return await startAsset({
+  const result = await startAsset({
     model: falConnection().threeD(),
     input: { prompt },
     abortSignal: options.abortSignal,
     webhookUrl: options.webhookUrl,
-    hooks: {
-      async onOperation({ operation }) {
-        // This hook is awaited before startAsset returns. The handle contains no API key.
-        // A storage failure exposes the accepted operation on the SDK error; do not resubmit.
-        await store.put(taskId, JSON.stringify(operation));
-      },
-    },
   });
+  try {
+    // Critical persistence is awaited explicitly, outside best-effort SDK callbacks.
+    // The serializable operation contains no API key.
+    await store.put(taskId, JSON.stringify(result.operation));
+  } catch (cause) {
+    // fal already accepted this job. The caller can retry storing this same operation.
+    // Retrying submit3DTask would create another billable job.
+    throw Object.assign(new Error(`Task ${taskId} was accepted by fal but its operation could not be stored.`, { cause }), {
+      taskId,
+      operation: result.operation,
+    });
+  }
+  return result;
 }
 
 /** Use from a task worker or a status endpoint. One status observation; never submits. */
@@ -54,7 +60,7 @@ export async function read3DTaskStatus(taskId: string, store: OperationStore, ab
     operation: await loadOperation(store, taskId),
     abortSignal,
     timeoutMs: 30_000,
-    retry: { status: 2, initialDelayMs: 500, maxDelayMs: 5_000 },
+    retry: { status: 2 },
   });
 }
 
@@ -66,7 +72,7 @@ export async function waitFor3DTask(taskId: string, store: OperationStore, abort
     abortSignal,
     timeoutMs: 20 * 60_000,
     poll: { intervalMs: 2_000, timeoutMs: 20 * 60_000 },
-    retry: { status: 2, initialDelayMs: 500, maxDelayMs: 5_000 },
+    retry: { status: 2 },
   });
 }
 

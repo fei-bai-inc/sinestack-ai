@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setImmediate as nextTurn, setTimeout as sleep } from 'node:timers/promises';
 import { APICallError } from '@ai-sdk/provider';
+import { RetryError } from 'ai';
+import { mergeAbortSignals, mergeCallbacks, prepareRetries } from 'ai/internal';
 import {
   AssetAbortError,
   AssetExecutionError,
-  AssetHookError,
   AssetTimeoutError,
   cancelAsset,
   generateAsset,
@@ -17,7 +19,6 @@ import {
 } from '@sine-ai/core';
 
 const TEST_TIMEOUT = 3_000;
-const fastRetry = { initialDelayMs: 0, maxDelayMs: 0 };
 const fastPoll = { intervalMs: 0 };
 
 function output(kind = 'model-3d') {
@@ -37,6 +38,7 @@ function transientError(message = 'Temporary provider error') {
     url: 'https://provider.example.invalid/request',
     requestBodyValues: undefined,
     statusCode: 503,
+    responseHeaders: { 'retry-after-ms': '0' },
     isRetryable: true,
   });
 }
@@ -75,8 +77,14 @@ function terminalRecorder(events) {
   return {
     onFinish: () => events.push('finish'),
     onError: () => events.push('error'),
-    onAbort: () => events.push('abort'),
   };
+}
+
+function rejectWhenAborted(signal) {
+  signal.throwIfAborted();
+  return new Promise((_, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
 }
 
 function assertSingleIdempotencyHeader(options, expected) {
@@ -89,7 +97,7 @@ function assertSingleIdempotencyHeader(options, expected) {
 for (const kind of ['model-3d', 'sound-effect']) {
   test(`${kind}: facade shares one submit/poll lifecycle and preserves typed inputs`, { timeout: TEST_TIMEOUT }, async () => {
     const events = [];
-    const attempts = [];
+    const operations = [];
     const requests = [];
     const statuses = [
       { status: 'pending', progress: 0 },
@@ -117,22 +125,19 @@ for (const kind of ['model-3d', 'sound-effect']) {
       headers: { 'x-test-context': 'tenant-1' },
       providerOptions: { 'contract-test': { quality: 'high' } },
       poll: fastPoll,
-      retry: fastRetry,
       hooks: {
         async onStart() {
           events.push('start');
           await Promise.resolve();
           startHookFinished = true;
         },
-        onAttempt(event) { attempts.push(event.phase); },
         onOperation(event) {
           events.push('operation');
-          assert.equal(event.operation.kind, kind);
+          operations.push(event.operation);
         },
         onProgress(event) { events.push(event.status); },
         onFinish() { events.push('finish'); },
         onError() { events.push('error'); },
-        onAbort() { events.push('abort'); },
       },
     };
     const result = kind === 'model-3d'
@@ -141,7 +146,8 @@ for (const kind of ['model-3d', 'sound-effect']) {
 
     assert.equal(submitCount, 1);
     assert.deepEqual(events, ['start', 'operation', 'pending', 'running', 'finish']);
-    assert.deepEqual(attempts, ['start', 'status', 'status', 'status']);
+    assert.equal(operations.length, 1);
+    assert.equal(operations[0].kind, kind);
     assert.deepEqual(requests[0].input, kind === 'model-3d'
       ? { prompt: options.prompt }
       : { prompt: options.prompt, durationSeconds: 3, promptInfluence: 0.4, loop: true });
@@ -174,7 +180,6 @@ test('waitForAsset resumes a saved operation with a new model instance and never
 
 test('transient status failures retry the existing job only, with two retries by default', { timeout: TEST_TIMEOUT }, async () => {
   let statusCalls = 0;
-  const retries = [];
   const terminals = [];
   const { model, calls } = jobModel('sound-effect', {
     async doStatus(options) {
@@ -187,13 +192,11 @@ test('transient status failures retry the existing job only, with two retries by
   await generateAsset({
     model,
     input: { prompt: 'Rain' },
-    retry: fastRetry,
     poll: fastPoll,
-    hooks: { ...terminalRecorder(terminals), onRetry: event => retries.push(event) },
+    hooks: terminalRecorder(terminals),
   });
   assert.equal(calls.start.length, 1);
   assert.equal(statusCalls, 3);
-  assert.deepEqual(retries.map(event => event.phase), ['status', 'status']);
   assert.deepEqual(terminals, ['finish']);
 });
 
@@ -215,7 +218,7 @@ for (const [label, error] of [
     await assert.rejects(getAssetStatus({
       model,
       operation: operationFor(model),
-      retry: { ...fastRetry, status: 5 },
+      retry: { status: 5 },
     }));
     assert.equal(attempts, 1);
   });
@@ -235,7 +238,7 @@ test('safe submission retries preserve a caller-provided case-insensitive idempo
     model,
     input: { prompt: 'Chair' },
     headers: { 'IDEMPOTENCY-KEY': 'caller-request-123' },
-    retry: { ...fastRetry, start: 2 },
+    retry: { start: 2 },
   });
   assert.equal(submissions.length, 3);
   for (const submission of submissions) assertSingleIdempotencyHeader(submission, 'caller-request-123');
@@ -253,7 +256,7 @@ test('safe direct retries reuse an automatically generated idempotency key', { t
       return output();
     },
   };
-  await generateAsset({ model, input: { title: 'Report' }, retry: { ...fastRetry, generate: 1 } });
+  await generateAsset({ model, input: { title: 'Report' }, retry: { generate: 1 } });
   assert.equal(attempts.length, 2);
   assert.equal(typeof attempts[0].idempotencyKey, 'string');
   assert.ok(attempts[0].idempotencyKey.length > 0);
@@ -268,7 +271,7 @@ for (const mode of ['start', 'generate']) {
       ? { ...base, async doStart() { calls++; return { operation: 'id' }; }, async doStatus() { return { status: 'completed', result: output() }; } }
       : { ...base, async doGenerate() { calls++; return output(); } };
     const invoke = mode === 'start' ? startAsset : generateAsset;
-    await assert.rejects(invoke({ model, input: {}, retry: { ...fastRetry, [mode]: 1 } }));
+    await assert.rejects(invoke({ model, input: {}, retry: { [mode]: 1 } }));
     assert.equal(calls, 0);
   });
 
@@ -282,7 +285,7 @@ for (const mode of ['start', 'generate']) {
       ? { ...base, async doStart() { calls++; throw transientError(); }, async doStatus() { return { status: 'pending' }; } }
       : { ...base, async doGenerate() { calls++; throw transientError(); } };
     const invoke = mode === 'start' ? startAsset : generateAsset;
-    await assert.rejects(invoke({ model, input: {}, retry: fastRetry }));
+    await assert.rejects(invoke({ model, input: {} }));
     assert.equal(calls, 1);
   });
 }
@@ -308,7 +311,7 @@ for (const api of ['generate', 'wait']) {
         return { status: 'failed', error: { message: 'Generation failed', code: 'REMOTE_FAILURE' } };
       },
     });
-    const controls = { model, poll: fastPoll, retry: { ...fastRetry, status: 5 }, hooks: terminalRecorder(terminals) };
+    const controls = { model, poll: fastPoll, retry: { status: 5 }, hooks: terminalRecorder(terminals) };
     const promise = api === 'generate'
       ? generateAsset({ ...controls, input: { prompt: 'Chair' } })
       : waitForAsset({ ...controls, operation: operationFor(model) });
@@ -406,26 +409,58 @@ test('pre-aborted execution makes no provider request', { timeout: TEST_TIMEOUT 
   assert.equal(calls.status.length, 0);
 });
 
-test('abort interrupts an in-flight status promise that ignores the signal and retains its operation', { timeout: TEST_TIMEOUT }, async () => {
+test('a cooperative status adapter observes caller cancellation and retains its operation', { timeout: TEST_TIMEOUT }, async () => {
   const controller = new AbortController();
+  const cause = new Error('Stop waiting');
   const terminals = [];
   let statusSignal;
   const { model, calls } = jobModel('model-3d', {
     doStatus(options) {
       statusSignal = options.abortSignal;
-      queueMicrotask(() => controller.abort(new Error('Stop waiting')));
-      return new Promise(() => {});
+      queueMicrotask(() => controller.abort(cause));
+      return rejectWhenAborted(statusSignal);
     },
   });
   const operation = operationFor(model);
   await assert.rejects(waitForAsset({ model, operation, abortSignal: controller.signal, hooks: terminalRecorder(terminals) }), error => {
     assert.ok(error instanceof AssetAbortError);
     assert.deepEqual(error.operation, operation);
+    assert.equal(error.cause, cause);
     return true;
   });
   assert.equal(statusSignal.aborted, true);
   assert.equal(calls.start.length, 0);
-  assert.deepEqual(terminals, ['abort']);
+  assert.deepEqual(terminals, ['error']);
+});
+
+test('cancellation does not force an uncooperative provider promise to settle', { timeout: TEST_TIMEOUT }, async t => {
+  const controller = new AbortController();
+  const entered = Promise.withResolvers();
+  const provider = Promise.withResolvers();
+  t.after(() => provider.resolve({ status: 'completed', result: output() }));
+  let statusSignal;
+  const { model } = jobModel('model-3d', {
+    doStatus(options) {
+      statusSignal = options.abortSignal;
+      entered.resolve();
+      return provider.promise;
+    },
+  });
+  const operation = operationFor(model);
+  let settled = false;
+  const outcome = waitForAsset({ model, operation, abortSignal: controller.signal }).then(
+    value => { settled = true; return { value }; },
+    error => { settled = true; return { error }; },
+  );
+  await entered.promise;
+  controller.abort(new Error('Stop observing the provider'));
+  await nextTurn();
+  assert.equal(statusSignal.aborted, true);
+  assert.equal(settled, false, 'the SDK forwards cancellation without racing arbitrary provider promises');
+  provider.resolve({ status: 'completed', result: output() });
+  const result = await outcome;
+  assert.ok(result.error instanceof AssetAbortError);
+  assert.deepEqual(result.error.operation, operation);
 });
 
 test('cancellation after progress does not issue another query or resubmit', { timeout: TEST_TIMEOUT }, async () => {
@@ -443,11 +478,11 @@ test('cancellation after progress does not issue another query or resubmit', { t
   assert.equal(statusCalls, 1);
 });
 
-test('poll timeout includes an in-flight query that never resolves', { timeout: TEST_TIMEOUT }, async () => {
+test('poll timeout is forwarded to a cooperative in-flight status adapter', { timeout: TEST_TIMEOUT }, async () => {
   let statusSignal;
   const terminals = [];
   const { model } = jobModel('model-3d', {
-    doStatus(options) { statusSignal = options.abortSignal; return new Promise(() => {}); },
+    doStatus(options) { statusSignal = options.abortSignal; return rejectWhenAborted(statusSignal); },
   });
   const operation = operationFor(model);
   await assert.rejects(waitForAsset({
@@ -455,18 +490,19 @@ test('poll timeout includes an in-flight query that never resolves', { timeout: 
   }), error => {
     assert.ok(error instanceof AssetTimeoutError);
     assert.equal(error.code, 'ASSET_TIMEOUT');
+    assert.equal(error.cause, statusSignal.reason);
+    assert.ok(error.cause instanceof DOMException);
     assert.deepEqual(error.operation, operation);
     return true;
   });
   assert.equal(statusSignal.aborted, true);
-  assert.equal(terminals.length, 1);
-  assert.notEqual(terminals[0], 'finish');
+  assert.deepEqual(terminals, ['error']);
 });
 
-test('whole-call timeout includes submission instead of starting only after the job is accepted', { timeout: TEST_TIMEOUT }, async () => {
+test('the call timeout signal reaches a cooperative submission adapter', { timeout: TEST_TIMEOUT }, async () => {
   let submitSignal;
   const { model, calls } = jobModel('model-3d', {
-    doStart(options) { submitSignal = options.abortSignal; return new Promise(() => {}); },
+    doStart(options) { submitSignal = options.abortSignal; return rejectWhenAborted(submitSignal); },
   });
   await assert.rejects(generateAsset({ model, input: {}, timeoutMs: 30, poll: { timeoutMs: 1_000 } }), error => {
     assert.ok(error instanceof AssetTimeoutError);
@@ -477,88 +513,85 @@ test('whole-call timeout includes submission instead of starting only after the 
   assert.equal(calls.status.length, 0);
 });
 
-test('whole-call timeout also bounds an onStart hook that never resolves', { timeout: TEST_TIMEOUT }, async () => {
+test('timeout does not force an observation hook to settle, and no I/O begins after it settles', { timeout: TEST_TIMEOUT }, async t => {
+  const entered = Promise.withResolvers();
+  const observer = Promise.withResolvers();
+  t.after(() => observer.resolve());
   const { model, calls } = jobModel();
-  await assert.rejects(generateAsset({
-    model, input: {}, timeoutMs: 30,
-    hooks: { onStart() { return new Promise(() => {}); } },
-  }), error => {
-    assert.equal(error.code, 'ASSET_TIMEOUT');
-    return true;
-  });
+  let settled = false;
+  const outcome = generateAsset({
+    model, input: {}, timeoutMs: 5,
+    hooks: { onStart() { entered.resolve(); return observer.promise; } },
+  }).then(
+    value => { settled = true; return { value }; },
+    error => { settled = true; return { error }; },
+  );
+  await entered.promise;
+  await sleep(15);
+  assert.equal(settled, false, 'observation hooks follow mergeCallbacks awaiting semantics');
+  assert.equal(calls.start.length, 0);
+  observer.resolve();
+  const result = await outcome;
+  assert.ok(result.error instanceof AssetTimeoutError);
   assert.equal(calls.start.length, 0);
   assert.equal(calls.status.length, 0);
 });
 
-test('onStart failure is propagated before any submission', { timeout: TEST_TIMEOUT }, async () => {
-  const cause = new Error('Start observer rejected');
-  const { model, calls } = jobModel();
-  await assert.rejects(generateAsset({ model, input: {}, hooks: { async onStart() { throw cause; } } }), error => {
-    assert.ok(error instanceof AssetHookError);
-    assert.equal(error.hook, 'onStart');
-    assert.equal(error.cause, cause);
-    return true;
-  });
-  assert.equal(calls.start.length, 0);
-});
-
-test('onOperation failure retains the accepted job and never polls or resubmits', { timeout: TEST_TIMEOUT }, async () => {
-  const cause = new Error('Could not persist operation');
-  const { model, calls } = jobModel();
-  await assert.rejects(generateAsset({
-    model, input: {}, poll: fastPoll,
-    hooks: { async onOperation() { throw cause; } },
-  }), error => {
-    assert.ok(error instanceof AssetHookError);
-    assert.equal(error.hook, 'onOperation');
-    assert.equal(error.cause, cause);
-    assert.deepEqual(error.operation, operationFor(model));
-    return true;
-  });
-  assert.equal(calls.start.length, 1);
-  assert.equal(calls.status.length, 0);
-});
-
-test('onFinish failure exposes the completed result, without onError or another provider attempt', { timeout: TEST_TIMEOUT }, async () => {
-  const terminals = [];
-  let calls = 0;
-  const cause = new Error('Finish observer rejected');
-  const model = {
-    specificationVersion: 'v1', provider: 'finish-test', modelId: 'direct', kind: 'model-3d',
-    capabilities: { idempotentGenerate: true },
-    async doGenerate() { calls++; return output(); },
+test('observation hooks await completion and ignore failure exactly like SDK mergeCallbacks', { timeout: TEST_TIMEOUT }, async () => {
+  const hookNames = ['onStart', 'onOperation', 'onProgress', 'onFinish'];
+  const sdkEvents = [];
+  const actualEvents = [];
+  const sequence = [];
+  const observer = (events, name) => async () => {
+    events.push(name + ':start');
+    await Promise.resolve();
+    events.push(name + ':settled');
+    throw new Error(name + ' observer failed');
   };
-  await assert.rejects(generateAsset({
-    model, input: {}, retry: { ...fastRetry, generate: 2 },
-    hooks: {
-      ...terminalRecorder(terminals),
-      async onFinish() { terminals.push('finish'); throw cause; },
+  for (const name of hookNames) await mergeCallbacks(observer(sdkEvents, name))({});
+  const hooks = Object.fromEntries(hookNames.map(name => [name, async event => {
+    sequence.push(name + ':start');
+    try { await observer(actualEvents, name)(event); }
+    finally { sequence.push(name + ':settled'); }
+  }]));
+  let errorEvents = 0;
+  hooks.onError = () => { errorEvents++; };
+  let queries = 0;
+  const { model } = jobModel('model-3d', {
+    async doStart() { sequence.push('submit'); return { operation: { requestId: 'observed-job' } }; },
+    async doStatus() {
+      sequence.push('query');
+      return ++queries === 1 ? { status: 'running' } : { status: 'completed', result: output() };
     },
-  }), error => {
-    assert.ok(error instanceof AssetHookError);
-    assert.equal(error.hook, 'onFinish');
-    assert.equal(error.cause, cause);
-    assert.deepEqual(error.result.asset, output().assets[0]);
-    return true;
   });
-  assert.equal(calls, 1);
-  assert.deepEqual(terminals, ['finish']);
+  const result = await generateAsset({ model, input: {}, poll: fastPoll, hooks });
+  assert.deepEqual(actualEvents, sdkEvents);
+  assert.deepEqual(sequence, [
+    'onStart:start', 'onStart:settled', 'submit',
+    'onOperation:start', 'onOperation:settled', 'query',
+    'onProgress:start', 'onProgress:settled', 'query',
+    'onFinish:start', 'onFinish:settled',
+  ]);
+  assert.deepEqual(result.operation.operation, { requestId: 'observed-job' });
+  assert.deepEqual(result.asset, output().assets[0]);
+  assert.equal(errorEvents, 0);
 });
 
-test('an error-hook failure preserves the original execution error and operation', { timeout: TEST_TIMEOUT }, async () => {
+test('an onError observer failure does not replace the execution error or operation', { timeout: TEST_TIMEOUT }, async () => {
   const observerError = new Error('Error observer rejected');
   let onErrorCalls = 0;
+  let observedError;
   const { model, calls } = jobModel('model-3d', {
     async doStatus() { return { status: 'failed', error: { message: 'Remote job failed' } }; },
   });
   await assert.rejects(generateAsset({
     model, input: {}, poll: fastPoll,
-    hooks: { async onError() { onErrorCalls++; throw observerError; } },
+    hooks: { async onError(event) { onErrorCalls++; observedError = event.error; throw observerError; } },
   }), error => {
-    assert.ok(error instanceof AssetHookError);
-    assert.equal(error.hook, 'onError');
-    assert.equal(error.cause, observerError);
-    assert.equal(error.executionError.code, 'ASSET_JOB_FAILED');
+    assert.ok(error instanceof AssetExecutionError);
+    assert.equal(error, observedError);
+    assert.equal(error.code, 'ASSET_JOB_FAILED');
+    assert.notEqual(error.cause, observerError);
     assert.deepEqual(error.operation, operationFor(model));
     return true;
   });
@@ -608,7 +641,7 @@ test('supported webhooks wait for the receiver then perform one final status que
   assert.deepEqual(result.asset, output().assets[0]);
 });
 
-test('webhook finalization is bounded by the poll deadline even when its query ignores abort', { timeout: TEST_TIMEOUT }, async () => {
+test('webhook finalization forwards the poll timeout signal to a cooperative final query', { timeout: TEST_TIMEOUT }, async () => {
   let statusCalls = 0;
   let statusSignal;
   const { model, calls } = jobModel('model-3d', {
@@ -616,7 +649,7 @@ test('webhook finalization is bounded by the poll deadline even when its query i
     doStatus(options) {
       statusCalls++;
       statusSignal = options.abortSignal;
-      return new Promise(() => {});
+      return rejectWhenAborted(statusSignal);
     },
   });
   await assert.rejects(generateAsset({
@@ -631,6 +664,23 @@ test('webhook finalization is bounded by the poll deadline even when its query i
   assert.equal(calls.start.length, 1);
   assert.equal(statusCalls, 1);
   assert.equal(statusSignal.aborted, true);
+});
+
+test('waiting for a webhook notification times out before issuing a final query', { timeout: TEST_TIMEOUT }, async () => {
+  const { model, calls } = jobModel('model-3d', { capabilities: { webhooks: true } });
+  await assert.rejects(generateAsset({
+    model, input: {}, poll: { timeoutMs: 15 },
+    webhook: () => ({
+      url: 'https://app.example.invalid/webhook',
+      received: new Promise(() => {}),
+    }),
+  }), error => {
+    assert.ok(error instanceof AssetTimeoutError);
+    assert.deepEqual(error.operation, operationFor(model));
+    return true;
+  });
+  assert.equal(calls.start.length, 1);
+  assert.equal(calls.status.length, 0);
 });
 
 test('cancelAsset preserves a requested cancellation without claiming the remote job stopped', { timeout: TEST_TIMEOUT }, async () => {
@@ -710,7 +760,7 @@ test('provider status fields cannot overwrite the core progress event identity o
   const startedAt = Date.now();
   let started;
   let acceptedOperation;
-  let progressEvents = 0;
+  const progressEvents = [];
   let queries = 0;
   const { model } = jobModel('model-3d', {
     async doStatus(options) {
@@ -729,22 +779,21 @@ test('provider status fields cannot overwrite the core progress event identity o
     hooks: {
       onStart(event) { started = event; },
       onOperation(event) { acceptedOperation = event.operation; },
-      onProgress(event) {
-        progressEvents++;
-        assert.equal(event.callId, started.callId);
-        assert.equal(event.api, 'generateAsset');
-        assert.equal(event.provider, model.provider);
-        assert.equal(event.modelId, model.modelId);
-        assert.equal(event.kind, model.kind);
-        assert.ok(event.timestamp >= startedAt);
-        assert.deepEqual(event.operation, acceptedOperation);
-        assert.equal(event.status, 'running');
-        assert.equal(event.progress, 0.25);
-        assert.equal(event.message, 'Building geometry');
-      },
+      onProgress(event) { progressEvents.push(event); },
     },
   });
-  assert.equal(progressEvents, 1);
+  assert.equal(progressEvents.length, 1);
+  const event = progressEvents[0];
+  assert.equal(event.callId, started.callId);
+  assert.equal(event.api, 'generateAsset');
+  assert.equal(event.provider, model.provider);
+  assert.equal(event.modelId, model.modelId);
+  assert.equal(event.kind, model.kind);
+  assert.ok(event.timestamp >= startedAt);
+  assert.deepEqual(event.operation, acceptedOperation);
+  assert.equal(event.status, 'running');
+  assert.equal(event.progress, 0.25);
+  assert.equal(event.message, 'Building geometry');
   assert.equal(queries, 2);
   assert.deepEqual(result.operation, operationFor(model));
 });
@@ -754,7 +803,7 @@ test('a non-boolean idempotency capability is rejected before submission', { tim
     capabilities: { idempotentStart: 'false' },
   });
   await assert.rejects(startAsset({
-    model, input: {}, retry: { ...fastRetry, start: 1 },
+    model, input: {}, retry: { start: 1 },
   }), error => {
     assert.ok(error instanceof TypeError);
     assert.match(error.message, /idempotentStart.*boolean/);
@@ -810,24 +859,19 @@ for (const [api, invoke] of restoredAPIs) {
       requestId: 'original-job', route: { region: 'original-region' }, parts: [{ id: 'original-part' }],
     });
     const expected = JSON.parse(JSON.stringify(original));
-    let started = false;
+    let observedOperation;
+    const mutationResults = [];
     const options = {
       model, operation: original, ...(api === 'waitForAsset' ? { poll: fastPoll } : {}),
       hooks: {
         onStart(event) {
-          started = true;
-          assert.deepEqual(event.operation, expected);
-          assert.notEqual(event.operation, original);
-          assert.notEqual(event.operation.operation, original.operation);
-          assert.ok(Object.isFrozen(event.operation));
-          assert.ok(Object.isFrozen(event.operation.operation));
-          assert.ok(Object.isFrozen(event.operation.operation.route));
-          assert.ok(Object.isFrozen(event.operation.operation.parts));
-          assert.ok(Object.isFrozen(event.operation.operation.parts[0]));
-          assert.equal(Reflect.set(event.operation, 'provider', 'other-provider'), false);
-          assert.equal(Reflect.set(event.operation.operation, 'requestId', 'hook-target'), false);
-          assert.equal(Reflect.set(event.operation.operation.route, 'region', 'hook-region'), false);
-          assert.equal(Reflect.set(event.operation.operation.parts[0], 'id', 'hook-part'), false);
+          observedOperation = event.operation;
+          mutationResults.push(
+            Reflect.set(event.operation, 'provider', 'other-provider'),
+            Reflect.set(event.operation.operation, 'requestId', 'hook-target'),
+            Reflect.set(event.operation.operation.route, 'region', 'hook-region'),
+            Reflect.set(event.operation.operation.parts[0], 'id', 'hook-part'),
+          );
 
           // The caller retains ownership of the original mutable object. Both
           // changing it and replacing options.operation must leave work fixed.
@@ -839,13 +883,23 @@ for (const [api, invoke] of restoredAPIs) {
       },
     };
     const result = await invoke(options);
-    assert.equal(started, true);
+    assert.deepEqual(observedOperation, expected);
+    assert.notEqual(observedOperation, original);
+    assert.notEqual(observedOperation.operation, original.operation);
+    assert.ok(Object.isFrozen(observedOperation));
+    assert.ok(Object.isFrozen(observedOperation.operation));
+    assert.ok(Object.isFrozen(observedOperation.operation.route));
+    assert.ok(Object.isFrozen(observedOperation.operation.parts));
+    assert.ok(Object.isFrozen(observedOperation.operation.parts[0]));
+    assert.deepEqual(mutationResults, [false, false, false, false]);
+    assert.equal(original.operation.requestId, 'caller-target');
+    assert.equal(options.operation.operation.requestId, 'replacement-target');
     assert.deepEqual(requests, [expected.operation]);
     assert.deepEqual(result.operation, expected);
     assert.equal(calls.start.length, 0);
   });
 
-  test(api + ': an onStart failure retains the existing operation without contacting the provider', { timeout: TEST_TIMEOUT }, async () => {
+  test(api + ': an onStart observer failure does not prevent resuming the existing operation', { timeout: TEST_TIMEOUT }, async () => {
     let cancelCalls = 0;
     const { model, calls } = jobModel('model-3d', {
       async doCancel() { cancelCalls++; return { status: 'requested' }; },
@@ -853,32 +907,26 @@ for (const [api, invoke] of restoredAPIs) {
     const operation = operationFor(model);
     const cause = new Error('Start hook failed while restoring the job');
     let errors = 0;
-    await assert.rejects(invoke({
+    let observedOperation;
+    const result = await invoke({
       model, operation,
       hooks: {
         onStart(event) {
-          assert.deepEqual(event.operation, operation);
+          observedOperation = event.operation;
           throw cause;
         },
-        onError(event) {
-          errors++;
-          assert.deepEqual(event.operation, operation);
-        },
+        onError() { errors++; },
       },
-    }), error => {
-      assert.ok(error instanceof AssetHookError);
-      assert.equal(error.hook, 'onStart');
-      assert.equal(error.cause, cause);
-      assert.deepEqual(error.operation, operation);
-      return true;
     });
-    assert.equal(errors, 1);
+    assert.deepEqual(observedOperation, operation);
+    assert.deepEqual(result.operation, operation);
+    assert.equal(errors, 0);
     assert.equal(calls.start.length, 0);
-    assert.equal(calls.status.length, 0);
-    assert.equal(cancelCalls, 0);
+    assert.equal(calls.status.length, api === 'cancelAsset' ? 0 : 1);
+    assert.equal(cancelCalls, api === 'cancelAsset' ? 1 : 0);
   });
 
-  test(api + ': pre-aborted restoration preserves the operation in the error and abort event', { timeout: TEST_TIMEOUT }, async () => {
+  test(api + ': pre-aborted restoration preserves the operation in the error and onError event', { timeout: TEST_TIMEOUT }, async () => {
     let cancelCalls = 0;
     const { model, calls } = jobModel('model-3d', {
       async doCancel() { cancelCalls++; return { status: 'requested' }; },
@@ -887,15 +935,16 @@ for (const [api, invoke] of restoredAPIs) {
     const controller = new AbortController();
     controller.abort(new Error('Already stopped'));
     const terminals = [];
+    let starts = 0;
+    let observedErrorEvent;
     await assert.rejects(invoke({
       model, operation, abortSignal: controller.signal,
       hooks: {
         ...terminalRecorder(terminals),
-        onStart() { assert.fail('onStart must not run for a pre-aborted call'); },
-        onAbort(event) {
-          terminals.push('abort');
-          assert.deepEqual(event.operation, operation);
-          assert.deepEqual(event.error.operation, operation);
+        onStart() { starts++; },
+        onError(event) {
+          terminals.push('error');
+          observedErrorEvent = event;
         },
       },
     }), error => {
@@ -903,20 +952,25 @@ for (const [api, invoke] of restoredAPIs) {
       assert.deepEqual(error.operation, operation);
       return true;
     });
-    assert.deepEqual(terminals, ['abort']);
+    assert.deepEqual(terminals, ['error']);
+    assert.equal(starts, 0);
+    assert.deepEqual(observedErrorEvent.operation, operation);
+    assert.deepEqual(observedErrorEvent.error.operation, operation);
     assert.equal(calls.start.length, 0);
     assert.equal(calls.status.length, 0);
     assert.equal(cancelCalls, 0);
   });
 }
 
-test('a newly submitted operation is detached and deeply frozen before persistence hooks or polling', { timeout: TEST_TIMEOUT }, async () => {
+test('a newly submitted operation is detached and deeply frozen before observation hooks or polling', { timeout: TEST_TIMEOUT }, async () => {
   const providerOperation = {
     requestId: 'accepted-job', route: { region: 'accepted-region' }, parts: [{ id: 'accepted-part' }],
   };
   const expectedPayload = JSON.parse(JSON.stringify(providerOperation));
   let submits = 0;
-  let persists = 0;
+  let observations = 0;
+  let observedOperation;
+  const mutationResults = [];
   let queries = 0;
   const { model } = jobModel('model-3d', {
     async doStart() { submits++; return { operation: providerOperation }; },
@@ -930,16 +984,12 @@ test('a newly submitted operation is detached and deeply frozen before persisten
     model, input: {}, poll: fastPoll,
     hooks: {
       onOperation(event) {
-        persists++;
-        assert.deepEqual(event.operation.operation, expectedPayload);
-        assert.notEqual(event.operation.operation, providerOperation);
-        assert.ok(Object.isFrozen(event.operation));
-        assert.ok(Object.isFrozen(event.operation.operation));
-        assert.ok(Object.isFrozen(event.operation.operation.route));
-        assert.ok(Object.isFrozen(event.operation.operation.parts));
-        assert.ok(Object.isFrozen(event.operation.operation.parts[0]));
-        assert.equal(Reflect.set(event.operation.operation, 'requestId', 'hook-target'), false);
-        assert.equal(Reflect.set(event.operation.operation.parts[0], 'id', 'hook-part'), false);
+        observations++;
+        observedOperation = event.operation;
+        mutationResults.push(
+          Reflect.set(event.operation.operation, 'requestId', 'hook-target'),
+          Reflect.set(event.operation.operation.parts[0], 'id', 'hook-part'),
+        );
         providerOperation.requestId = 'provider-target';
         providerOperation.route.region = 'provider-region';
         providerOperation.parts[0].id = 'provider-part';
@@ -947,14 +997,23 @@ test('a newly submitted operation is detached and deeply frozen before persisten
     },
   });
   assert.equal(submits, 1);
-  assert.equal(persists, 1);
+  assert.equal(observations, 1);
+  assert.deepEqual(observedOperation.operation, expectedPayload);
+  assert.notEqual(observedOperation.operation, providerOperation);
+  assert.ok(Object.isFrozen(observedOperation));
+  assert.ok(Object.isFrozen(observedOperation.operation));
+  assert.ok(Object.isFrozen(observedOperation.operation.route));
+  assert.ok(Object.isFrozen(observedOperation.operation.parts));
+  assert.ok(Object.isFrozen(observedOperation.operation.parts[0]));
+  assert.deepEqual(mutationResults, [false, false]);
+  assert.equal(providerOperation.requestId, 'provider-target');
   assert.equal(queries, 1);
   assert.deepEqual(result.operation, operationFor(model, expectedPayload));
 });
 
 for (const descriptor of ['non-enumerable toJSON', 'accessor']) {
   for (const path of ['submission', 'restoration']) {
-    test(path + ': operation with ' + descriptor + ' is rejected without executing or persisting it', { timeout: TEST_TIMEOUT }, async () => {
+    test(path + ': operation with ' + descriptor + ' is rejected without executing or exposing it', { timeout: TEST_TIMEOUT }, async () => {
       let executed = 0;
       const operation = { requestId: 'unsafe-job' };
       if (descriptor === 'non-enumerable toJSON') {
@@ -969,17 +1028,17 @@ for (const descriptor of ['non-enumerable toJSON', 'accessor']) {
         });
       }
       let submits = 0;
-      let persists = 0;
+      let observations = 0;
       const { model, calls } = jobModel('model-3d', {
         async doStart() { submits++; return { operation }; },
       });
-      const hooks = { onOperation() { persists++; } };
+      const hooks = { onOperation() { observations++; } };
       const promise = path === 'submission'
         ? generateAsset({ model, input: {}, poll: fastPoll, hooks })
         : getAssetStatus({ model, operation: operationFor(model, operation), hooks });
       await assert.rejects(promise);
       assert.equal(executed, 0, 'JSON validation must inspect descriptors without invoking user code');
-      assert.equal(persists, 0, 'a lossy operation must not reach the persistence hook');
+      assert.equal(observations, 0, 'a lossy operation must not reach the observation hook');
       assert.equal(submits, path === 'submission' ? 1 : 0);
       assert.equal(calls.status.length, 0);
     });
@@ -1002,32 +1061,51 @@ for (const data of ['==', 'AA=']) {
   });
 }
 
-test('onAttempt failure during a retry remains an AssetHookError and does not cause another provider request', { timeout: TEST_TIMEOUT }, async () => {
-  const cause = new Error('Observer rejected the second attempt');
-  let queries = 0;
-  const attempts = [];
-  const terminals = [];
+for (const [label, errors] of [
+  ['retry exhaustion', [transientError('First'), transientError('Second'), transientError('Third')]],
+  ['a non-retryable error after a retry', [transientError('First'), new Error('Invalid provider response')]],
+]) {
+  test('status preserves SDK prepareRetries behavior for ' + label, { timeout: TEST_TIMEOUT }, async () => {
+    let sdkCalls = 0;
+    let sdkError;
+    const { retry } = prepareRetries({ maxRetries: 2, abortSignal: undefined });
+    await assert.rejects(retry(async () => { throw errors[sdkCalls++]; }), error => {
+      sdkError = error;
+      return true;
+    });
+    assert.ok(RetryError.isInstance(sdkError));
+
+    let statusCalls = 0;
+    const { model, calls } = jobModel('model-3d', {
+      async doStatus() { throw errors[statusCalls++]; },
+    });
+    const operation = operationFor(model);
+    await assert.rejects(getAssetStatus({ model, operation, retry: { status: 2 } }), error => {
+      assert.ok(error instanceof AssetExecutionError);
+      assert.ok(RetryError.isInstance(error.cause));
+      assert.equal(error.cause.reason, sdkError.reason);
+      assert.equal(error.cause.message, sdkError.message);
+      assert.deepEqual(error.cause.errors, sdkError.errors);
+      assert.equal(error.cause.lastError, sdkError.lastError);
+      assert.deepEqual(error.operation, operation);
+      return true;
+    });
+    assert.equal(statusCalls, sdkCalls);
+    assert.equal(calls.start.length, 0);
+  });
+}
+
+test('a single caller signal is passed through with SDK mergeAbortSignals semantics', { timeout: TEST_TIMEOUT }, async () => {
+  const controller = new AbortController();
+  const sdkSignal = mergeAbortSignals(controller.signal);
+  let observedSignal;
   const { model } = jobModel('model-3d', {
-    async doStatus() { queries++; throw transientError(); },
-  });
-  const operation = operationFor(model);
-  await assert.rejects(getAssetStatus({
-    model, operation, retry: { ...fastRetry, status: 3 },
-    hooks: {
-      ...terminalRecorder(terminals),
-      onAttempt(event) {
-        attempts.push(event.attemptNumber);
-        if (event.attemptNumber === 2) throw cause;
-      },
+    async doStatus(options) {
+      observedSignal = options.abortSignal;
+      return { status: 'completed', result: output() };
     },
-  }), error => {
-    assert.ok(error instanceof AssetHookError);
-    assert.equal(error.hook, 'onAttempt');
-    assert.equal(error.cause, cause);
-    assert.deepEqual(error.operation, operation);
-    return true;
   });
-  assert.deepEqual(attempts, [1, 2]);
-  assert.equal(queries, 1);
-  assert.deepEqual(terminals, ['error']);
+  await getAssetStatus({ model, operation: operationFor(model), abortSignal: controller.signal });
+  assert.equal(observedSignal, sdkSignal);
+  assert.equal(observedSignal, controller.signal);
 });
