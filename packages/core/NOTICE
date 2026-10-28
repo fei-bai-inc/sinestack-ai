@@ -1,0 +1,21 @@
+Sine AI core
+Copyright 2026 Sine AI contributors.
+
+This package includes execution logic adapted from Vercel AI SDK:
+Copyright 2023 Vercel, Inc.
+https://github.com/vercel/ai
+Licensed under the Apache License, Version 2.0.
+
+Upstream baseline: ai 7.0.155 video generation, submission, status,
+retry, and abort handling. Public @ai-sdk/provider-utils 5.0.70 helpers
+are used as dependencies.
+
+Modified to share one lifecycle across asset kinds, enforce explicit
+submission idempotency, bind operation handles to their original model,
+propagate hook failures with recoverable results, support cancellation,
+and keep URL results as references. Sine AI's lifecycle and timeout
+semantics are not a promise of drop-in compatibility with generateVideo.
+
+See upstream.json and docs/UPSTREAM.md in the Sine AI source repository
+for the reviewed source files and SHA-256 hashes.
+https://github.com/fei-bai-inc/sine-ai

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/vercel/ai",
+  "reviewedOn": "2026-10-28",
+  "baseline": "ai@7.0.155",
+  "license": "Apache-2.0",
+  "copyright": "Copyright 2023 Vercel, Inc.",
+  "verification": "Exact installed npm package versions, license metadata, and raw published source SHA-256 hashes; no network access.",
+  "packages": [
+    {
+      "name": "ai",
+      "version": "7.0.155",
+      "license": "Apache-2.0",
+      "consumers": [
+        "@sine-ai/core"
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529",
+          "role": "upstream attribution"
+        },
+        {
+          "path": "src/generate-video/generate-video.ts",
+          "sha256": "9ccf530102dc27a0c28cb1ec6f4387a66ac9447b25e4e13c912eef41abd25df5",
+          "role": "start/status and webhook/polling lifecycle reference"
+        },
+        {
+          "path": "src/generate-video/start-video.ts",
+          "sha256": "966703d471615044171e65453094c33cbd9f8e8d3141fe1b3c2b1dd78703095e",
+          "role": "single submission and stable idempotency reference"
+        },
+        {
+          "path": "src/generate-video/get-video-status.ts",
+          "sha256": "88881aebe923e36c0d6302abb9e4ede315230fb02d4370c0de0f8dfd46559303",
+          "role": "single status call reference"
+        },
+        {
+          "path": "src/util/prepare-retries.ts",
+          "sha256": "98ea11887f69cbe7021edf3557471847fff9edabc9fb9f02ae3ee239da1b87f9",
+          "role": "retry configuration and internal integration contract"
+        },
+        {
+          "path": "src/util/retry-with-exponential-backoff.ts",
+          "sha256": "8f424594e0267204540c2f3b1ad8f6d22f2d91b2cf885ede81d1fe5703defd6b",
+          "role": "retry classification and Retry-After policy reference"
+        },
+        {
+          "path": "src/util/merge-abort-signals.ts",
+          "sha256": "0f2046f37aa8df9e834e9dd8e2e5b849d09be06e5ff753707bd11046c535f289",
+          "role": "abort composition reference"
+        }
+      ]
+    },
+    {
+      "name": "@ai-sdk/provider",
+      "version": "4.0.34",
+      "license": "Apache-2.0",
+      "consumers": [
+        "@sine-ai/provider",
+        "@sine-ai/core",
+        "@sine-ai/fal"
+      ],
+      "files": [
+        {
+          "path": "src/video-model/v4/video-model-v4.ts",
+          "sha256": "0ba36d11ee378ccfab89efa54eeaac3b3abc878e469bcd358434321bc79d9d63",
+          "role": "versioned model and lifecycle method contract reference"
+        },
+        {
+          "path": "src/video-model/v4/video-model-v4-operation-start-result.ts",
+          "sha256": "7bc967415cc954e9cdf897b212e9c4d61c5eaabcdc12c694271b862aa01b4042",
+          "role": "serializable opaque operation reference"
+        },
+        {
+          "path": "src/video-model/v4/video-model-v4-operation-status-result.ts",
+          "sha256": "844735f74e38fd0b35c818c0fbc8e8e357c30e5fd7f48da1d58005a30d7e35ff",
+          "role": "discriminated status result reference"
+        },
+        {
+          "path": "src/video-model/v4/video-model-v4-operation-webhook.ts",
+          "sha256": "c4f3574eac74585490b40ceb2ee4f1b48ecc20032566ae5128d19550c55a574a",
+          "role": "webhook notification envelope reference"
+        }
+      ]
+    },
+    {
+      "name": "@ai-sdk/provider-utils",
+      "version": "5.0.70",
+      "license": "Apache-2.0",
+      "consumers": [
+        "@sine-ai/core",
+        "@sine-ai/fal"
+      ],
+      "files": [
+        {
+          "path": "src/retry-with-exponential-backoff.ts",
+          "sha256": "b666c1dc9cff5ccfb01db3f564ebe5b6c692b1dcf706ca3d266985373659dd7a",
+          "role": "shared public retry primitive"
+        },
+        {
+          "path": "src/delay.ts",
+          "sha256": "e26c1518420b27c6dc6e824cf3047a1b5021c907f6997de0bac4af743b70a207",
+          "role": "abort-aware timer delay reference"
+        }
+      ]
+    }
+  ],
+  "intentionalDifferences": [
+    "One asset lifecycle serves all typed facades; adapters do not own retries, polling, or hooks.",
+    "Submission retries default to zero; a positive count requires the corresponding explicit model idempotency capability. Status retries default to two.",
+    "Operation envelopes bind provider, model, kind, and specification version and validate their JSON payload.",
+    "URL assets remain references and are not downloaded implicitly.",
+    "Active public-call timeout and completion-wait timeout are separate; completion waiting includes the final status request after a webhook. Terminal error/abort cleanup hooks are still awaited after cancellation.",
+    "Lifecycle hooks are awaited and their errors propagate without changing an already selected terminal outcome.",
+    "Cancellation is an explicit provider operation; aborting local waiting is not remote cancellation.",
+    "Custom poll.delay replaces sleeping only and does not make the executor durable."
+  ]
+}

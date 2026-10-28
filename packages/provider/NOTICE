@@ -1,0 +1,16 @@
+Sine AI provider contracts
+Copyright 2026 Sine AI contributors.
+
+This package includes contracts adapted from Vercel AI SDK:
+Copyright 2023 Vercel, Inc.
+https://github.com/vercel/ai
+Licensed under the Apache License, Version 2.0.
+
+Upstream baseline: @ai-sdk/provider 4.0.34, VideoModelV4 and its asynchronous
+operation types. Modified to support typed inputs, arbitrary asset kinds,
+URL-preserving output files, explicit lifecycle capabilities, cancellation,
+and provider/model-bound operation envelopes.
+
+See upstream.json and docs/UPSTREAM.md in the Sine AI source repository
+for the reviewed source files and SHA-256 hashes.
+https://github.com/fei-bai-inc/sine-ai
