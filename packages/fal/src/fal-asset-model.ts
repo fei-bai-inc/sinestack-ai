@@ -1,13 +1,13 @@
 import {
-  AssetProviderTransport, errorMessage, httpURL, invalidResponse, jsonObject, jsonValue, record,
+  AssetProviderTransport, errorMessage, httpURL, invalidResponse, jsonObject, jsonValue, mapAssetResult, record, snapshotAssetMapping,
 } from '@sine-ai/provider-utils';
 import type { AssetProviderResponse } from '@sine-ai/provider-utils';
 import type {
   AssetModelV1,
+  AssetModelMapping,
   AssetModelV1CallOptions,
   AssetModelV1CancelResult,
   AssetModelV1OperationOptions,
-  AssetModelV1Result,
   AssetModelV1StartResult,
   AssetModelV1Status,
   JSONObject,
@@ -24,12 +24,8 @@ export interface FalAssetProviderSettings {
   readonly name?: string;
 }
 
-export interface FalAssetDefinition<INPUT, KIND extends string> {
+export interface FalAssetDefinition<INPUT = JSONObject, KIND extends string = string> extends AssetModelMapping<INPUT> {
   readonly kind: KIND;
-  /** Produce the model's JSON request. Mapped keys cannot be overridden by providerOptions.fal. */
-  readonly mapInput: (input: INPUT) => JSONObject | PromiseLike<JSONObject>;
-  /** Map the raw REST result, not the { data } wrapper returned by the fal JavaScript SDK. */
-  readonly mapResult: (result: unknown) => AssetModelV1Result | PromiseLike<AssetModelV1Result>;
 }
 
 interface QueueOperation extends JSONObject {
@@ -41,11 +37,6 @@ interface QueueOperation extends JSONObject {
   responseUrl: string;
   cancelUrl: string;
 }
-
-const CORE_INPUT_KEYS = new Set([
-  'prompt', 'text', 'duration', 'duration_seconds', 'durationSeconds',
-  'prompt_influence', 'promptInfluence', 'loop',
-]);
 
 /** One queue protocol implementation shared by all fal asset kinds. No polling or retries. */
 export class FalAssetModel<INPUT, KIND extends string> implements AssetModelV1<INPUT, KIND> {
@@ -62,39 +53,40 @@ export class FalAssetModel<INPUT, KIND extends string> implements AssetModelV1<I
     readonly modelId: string,
     settings: FalAssetProviderSettings,
     definition: FalAssetDefinition<INPUT, KIND>,
-    private readonly validateProviderOptions?: (options: JSONObject, mappedInput: JSONObject) => void,
   ) {
+    if (typeof modelId !== 'string') throw new TypeError('fal modelId must be an explicit owner/app path.');
     const parts = modelId.split('/');
-    if (parts.length < 2 || parts.some(part => !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(part))) {
-      throw new TypeError('fal modelId must contain safe owner/app path segments.');
+    // fal's workflow and Comfy endpoints include a namespace before owner/app.
+    const appPartCount = parts[0] === 'workflows' || parts[0] === 'comfy' ? 3 : 2;
+    if (parts.length < appPartCount || parts.some(part => !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(part))) {
+      throw new TypeError('fal modelId must contain safe owner/app path segments, including namespace/owner/app for workflows or comfy.');
     }
-    if (typeof definition.kind !== 'string' || !definition.kind.trim()) {
+    if (!definition || typeof definition.kind !== 'string' || !definition.kind.trim()) {
       throw new TypeError('fal asset kind must be a nonempty string.');
     }
-    if (typeof definition.mapInput !== 'function' || typeof definition.mapResult !== 'function') {
-      throw new TypeError('fal asset definitions require mapInput and mapResult functions.');
-    }
-    this.definition = { ...definition };
+    this.definition = { ...snapshotAssetMapping(definition), kind: definition.kind };
     this.transport = new AssetProviderTransport({
       ...settings, provider: 'fal', baseURL: settings.baseURL ?? 'https://queue.fal.run',
       environmentVariableName: 'FAL_KEY', authorizationScheme: 'Key',
     });
     this.base = new URL(this.transport.baseURL);
     const prefix = this.base.pathname.replace(/\/$/, '');
-    this.appPath = `${prefix}/${parts[0]}/${parts[1]}`;
+    this.appPath = `${prefix}/${parts.slice(0, appPartCount).join('/')}`;
     this.provider = settings.name ?? 'fal';
     this.kind = definition.kind;
   }
 
   async doStart(options: AssetModelV1CallOptions<INPUT>): Promise<AssetModelV1StartResult> {
-    const mapped = jsonObject(await this.definition.mapInput(options.input), 'fal mapped input');
+    const mapped = jsonObject(
+      this.definition.mapInput ? await this.definition.mapInput(options.input) : options.input,
+      'fal input',
+    );
     const extra = jsonObject(options.providerOptions.fal ?? {}, 'providerOptions.fal');
     for (const key of Object.keys(extra)) {
-      if (CORE_INPUT_KEYS.has(key) || Object.hasOwn(mapped, key)) {
+      if (Object.hasOwn(mapped, key)) {
         throw new TypeError(`providerOptions.fal.${key} cannot override a mapped input field; pass it through input.`);
       }
     }
-    this.validateProviderOptions?.(extra, mapped);
     const body = { ...extra, ...mapped };
     const url = new URL(`${this.base.href.replace(/\/$/, '')}/${this.modelId}`);
     if (options.webhookUrl !== undefined) {
@@ -167,7 +159,7 @@ export class FalAssetModel<INPUT, KIND extends string> implements AssetModelV1<I
     try {
       // Snapshot before calling user mapping code so mutation cannot rewrite the native result.
       const output = jsonValue(resultResponse.value, 'fal output');
-      const result = await this.definition.mapResult(jsonValue(output, 'fal mapper output'));
+      const result = await (this.definition.mapResult ?? mapAssetResult)(jsonValue(output, 'fal mapper output'));
       if (!result || !Array.isArray(result.assets) || result.assets.length === 0) {
         throw new TypeError('fal mapResult must return an asset result with a nonempty assets array.');
       }

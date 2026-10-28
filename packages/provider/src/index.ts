@@ -44,6 +44,12 @@ export interface AssetModelV1Result {
   readonly response?: AssetResponse;
 }
 
+/** Optional application-owned mappings. Without these, adapters use native JSON and common file references. */
+export interface AssetModelMapping<INPUT = JSONObject> {
+  readonly mapInput?: (input: INPUT) => JSONObject | PromiseLike<JSONObject>;
+  readonly mapResult?: (output: JSONValue) => AssetModelV1Result | PromiseLike<AssetModelV1Result>;
+}
+
 export interface AssetModelV1CallOptions<INPUT> {
   readonly input: INPUT;
   readonly providerOptions: SharedV4ProviderOptions;

@@ -1,9 +1,9 @@
 import type {
-  AssetModelV1, AssetModelV1CallOptions, AssetModelV1OperationOptions,
-  AssetModelV1Result, AssetModelV1StartResult, AssetModelV1Status, JSONObject,
+  AssetModelMapping, AssetModelV1, AssetModelV1CallOptions, AssetModelV1OperationOptions,
+  AssetModelV1StartResult, AssetModelV1Status, JSONObject,
 } from '@sine-ai/provider';
 import {
-  AssetProviderTransport, errorMessage, httpURL, invalidResponse, jsonObject, jsonValue, record,
+  AssetProviderTransport, errorMessage, httpURL, invalidResponse, jsonObject, jsonValue, mapAssetResult, record, snapshotAssetMapping,
 } from '@sine-ai/provider-utils';
 
 export interface WaveSpeedAssetProviderSettings {
@@ -15,12 +15,8 @@ export interface WaveSpeedAssetProviderSettings {
   readonly name?: string;
 }
 
-export interface WaveSpeedAssetDefinition<INPUT, KIND extends string> {
+export interface WaveSpeedAssetDefinition<INPUT = JSONObject, KIND extends string = string> extends AssetModelMapping<INPUT> {
   readonly kind: KIND;
-  /** Produce the native prediction input. Mapped fields cannot be overridden by providerOptions.wavespeed. */
-  readonly mapInput: (input: INPUT) => JSONObject | PromiseLike<JSONObject>;
-  /** Map the prediction's data.outputs array, without the prediction/envelope wrapper. */
-  readonly mapResult: (output: unknown) => AssetModelV1Result | PromiseLike<AssetModelV1Result>;
 }
 
 interface PredictionOperation extends JSONObject {
@@ -44,21 +40,17 @@ export class WaveSpeedAssetModel<INPUT, KIND extends string> implements AssetMod
     readonly modelId: string,
     settings: WaveSpeedAssetProviderSettings,
     definition: WaveSpeedAssetDefinition<INPUT, KIND>,
-    private readonly validateProviderOptions?: (options: JSONObject) => void,
   ) {
-    const parts = modelId.split('/');
+    const parts = typeof modelId === 'string' ? modelId.split('/') : [];
     if (parts.length < 2 || parts.some(part => !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(part))) {
       throw new TypeError('WaveSpeed modelId must contain safe owner/model path segments.');
     }
-    if (typeof definition.kind !== 'string' || !definition.kind.trim()) {
+    if (!definition || typeof definition.kind !== 'string' || !definition.kind.trim()) {
       throw new TypeError('WaveSpeed asset kind must be a nonempty string.');
-    }
-    if (typeof definition.mapInput !== 'function' || typeof definition.mapResult !== 'function') {
-      throw new TypeError('WaveSpeed asset definition must provide mapInput and mapResult functions.');
     }
     this.provider = settings.name ?? 'wavespeed';
     this.kind = definition.kind;
-    this.definition = { ...definition };
+    this.definition = { ...snapshotAssetMapping(definition), kind: definition.kind };
     this.transport = new AssetProviderTransport({
       ...settings, provider: 'WaveSpeed',
       baseURL: settings.baseURL ?? 'https://api.wavespeed.ai/api/v3',
@@ -67,31 +59,34 @@ export class WaveSpeedAssetModel<INPUT, KIND extends string> implements AssetMod
   }
 
   async doStart(options: AssetModelV1CallOptions<INPUT>): Promise<AssetModelV1StartResult> {
-    const mapped = jsonObject(await this.definition.mapInput(options.input), 'WaveSpeed mapped input');
+    const mapped = jsonObject(this.definition.mapInput === undefined
+      ? options.input : await this.definition.mapInput(options.input), 'WaveSpeed input');
     const extra = jsonObject(options.providerOptions.wavespeed ?? {}, 'providerOptions.wavespeed');
     for (const key of Object.keys(extra)) {
       if (Object.hasOwn(mapped, key)) {
         throw new TypeError(`providerOptions.wavespeed.${key} cannot override a mapped input field; pass it through input.`);
       }
     }
-    this.validateProviderOptions?.(extra);
     const body = { ...extra, ...mapped };
     for (const key of ['enable_sync_mode', 'enable_base64_output']) {
       if (body[key] !== undefined && typeof body[key] !== 'boolean') {
         throw new TypeError(`WaveSpeed ${key} must be a boolean.`);
       }
     }
-    if (body.enable_base64_output === true) {
-      throw new TypeError('WaveSpeed enable_base64_output is not supported; use URL outputs and materializeAsset.');
-    }
     const url = new URL(`${this.transport.baseURL}/${this.modelId}`);
     if (options.webhookUrl !== undefined) {
       if (body.enable_sync_mode === true) {
         throw new TypeError('WaveSpeed enable_sync_mode cannot be combined with a webhook.');
       }
+      if (body.enable_base64_output === true) {
+        throw new TypeError('WaveSpeed enable_base64_output cannot be combined with a webhook.');
+      }
       const webhook = httpURL(options.webhookUrl, 'WaveSpeed webhookUrl');
       if (webhook.protocol !== 'https:') throw new TypeError('WaveSpeed webhookUrl must use HTTPS.');
       url.searchParams.set('standard_webhook', webhook.href);
+    }
+    if (body.enable_base64_output === true && this.definition.mapResult === undefined) {
+      throw new TypeError('WaveSpeed enable_base64_output requires an explicit mapResult to identify the file format.');
     }
     const response = await this.transport.request(url, 'POST', options, body);
     try {
@@ -151,7 +146,7 @@ export class WaveSpeedAssetModel<INPUT, KIND extends string> implements AssetMod
       }
       // Copy native output before invoking a user mapper, which may mutate its argument.
       const output = jsonValue(prediction.outputs, 'WaveSpeed prediction outputs');
-      const result = await this.definition.mapResult(jsonValue(output, 'WaveSpeed mapper output'));
+      const result = await (this.definition.mapResult ?? mapAssetResult)(jsonValue(output, 'WaveSpeed mapper output'));
       if (!result || !Array.isArray(result.assets) || result.assets.length === 0) {
         throw new TypeError('WaveSpeed mapResult must return at least one asset.');
       }

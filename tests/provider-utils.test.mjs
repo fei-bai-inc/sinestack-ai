@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
-import { AssetProviderTransport, jsonObject, jsonValue } from '@sine-ai/provider-utils';
+import { AssetProviderTransport, jsonObject, jsonValue, mapAssetResult, snapshotAssetMapping } from '@sine-ai/provider-utils';
 
 const options = () => ({ headers: {}, abortSignal: new AbortController().signal });
 const settings = fetch => ({
@@ -139,4 +139,65 @@ test('JSON snapshots detach data and reject lossy or executable request values',
     assert.throws(() => jsonObject(value, 'input'), TypeError);
   }
   assert.equal(getterCalled, false);
+});
+
+test('default result mapping recognizes native file shapes without any model registration', () => {
+  const output = {
+    audio: { url: 'https://assets.example/song', content_type: 'audio/wav', file_name: 'song.wav', file_size: 1024 },
+    custom_geometry: [{ url: 'https://assets.example/mesh.glb' }, { url: 'https://assets.example/texture.png' }],
+    custom_motion: { payload: { url: 'https://assets.example/motion.json' } },
+    seed: 42,
+    metadata: { documentation: 'https://provider.example/docs', message: 'See https://provider.example/status' },
+  };
+  const result = mapAssetResult(output);
+  assert.deepEqual(result.assets.map(file => file.url), [
+    'https://assets.example/song', 'https://assets.example/mesh.glb',
+    'https://assets.example/texture.png', 'https://assets.example/motion.json',
+  ]);
+  assert.deepEqual(result.assets.map(file => file.mediaType), ['audio/wav', 'model/gltf-binary', 'image/png', 'application/json']);
+  assert.equal(result.assets[0].filename, 'song.wav');
+  assert.deepEqual(result.assets[0].metadata, { fileSize: 1024 });
+  assert.equal(mapAssetResult('https://assets.example/unknown-format').assets[0].mediaType, 'application/octet-stream');
+  for (const name of ['constructor', '__proto__', 'asset.constructor', 'asset.__proto__']) {
+    assert.equal(mapAssetResult(`https://assets.example/${name}`).assets[0].mediaType, 'application/octet-stream');
+    assert.equal(mapAssetResult({ url: 'https://assets.example/file', file_name: name }).assets[0].mediaType, 'application/octet-stream');
+  }
+  assert.equal(mapAssetResult({ files: ['https://assets.example/report.pdf'] }).assets[0].mediaType, 'application/pdf');
+});
+
+test('default result mapping deduplicates references while retaining explicit provider file metadata', () => {
+  const result = mapAssetResult([
+    'https://assets.example/audio',
+    { url: 'https://assets.example/audio', content_type: 'audio/flac', file_name: 'recording.flac' },
+    'https://assets.example/mesh.glb',
+  ]);
+  assert.equal(result.assets.length, 2);
+  assert.equal(result.assets[0].mediaType, 'audio/flac');
+  assert.equal(result.assets[0].filename, 'recording.flac');
+  assert.equal(result.assets[1].mediaType, 'model/gltf-binary');
+});
+
+test('default result mapping requires real file references and leaves special schemas to injected mappers', () => {
+  for (const output of [null, 'Generated text', 'Read https://example.test/file.pdf for details', [], {},
+    { metadata: { docs: 'https://example.test/docs' } }, { mesh_url: 'https://example.test/custom.glb' }]) {
+    assert.throws(() => mapAssetResult(output), /Provide mapResult/);
+  }
+  for (const file of [
+    { url: 'javascript:alert(1)' }, { url: 'https://user:pass@example.test/file.glb' },
+    { url: 'https://example.test/file.glb', content_type: 'not-a-mime' },
+    { url: 'https://example.test/file.glb', file_size: -1 },
+  ]) assert.throws(() => mapAssetResult(file), TypeError);
+});
+
+test('injected mapping methods retain their original receiver and snapshot method identity', async () => {
+  class ExternalMapping {
+    #prefix = 'external:';
+    mapInput(input) { return { text: this.#prefix + input.description }; }
+    mapResult(output) { return { assets: [{ type: 'url', url: output, mediaType: 'audio/wav', role: this.#prefix }] }; }
+  }
+  const implementation = new ExternalMapping();
+  const mapping = snapshotAssetMapping(implementation);
+  implementation.mapInput = () => { throw new Error('Changed method must not replace captured implementation'); };
+  assert.deepEqual(await mapping.mapInput({ description: 'Song' }), { text: 'external:Song' });
+  assert.equal((await mapping.mapResult('https://assets.example/song.wav')).assets[0].role, 'external:');
 });

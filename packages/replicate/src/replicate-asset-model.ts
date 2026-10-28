@@ -1,11 +1,11 @@
 import type {
-  AssetModelV1, AssetModelV1CallOptions, AssetModelV1CancelResult,
-  AssetModelV1OperationOptions, AssetModelV1Result, AssetModelV1StartResult,
-  AssetModelV1Status, JSONObject, JSONValue,
+  AssetModelMapping, AssetModelV1, AssetModelV1CallOptions, AssetModelV1CancelResult,
+  AssetModelV1OperationOptions, AssetModelV1StartResult,
+  AssetModelV1Status, JSONObject,
 } from '@sine-ai/provider';
 import {
   AssetProviderTransport, errorMessage, httpURL, invalidResponse,
-  jsonObject, jsonValue, record,
+  jsonObject, jsonValue, mapAssetResult, record, snapshotAssetMapping,
 } from '@sine-ai/provider-utils';
 
 export interface ReplicateAssetProviderSettings {
@@ -17,14 +17,14 @@ export interface ReplicateAssetProviderSettings {
   readonly name?: string;
 }
 
-export interface ReplicateAssetDefinition<INPUT, KIND extends string> {
-  readonly kind: KIND;
+export interface ReplicateAssetMapping<INPUT = JSONObject> extends AssetModelMapping<INPUT> {
   /** Optional fixed 64-character model version; alternatively append :version to modelId. */
   readonly version?: string;
-  /** Produce the model's native input object, not the outer prediction request. */
-  readonly mapInput: (input: INPUT) => JSONObject | PromiseLike<JSONObject>;
-  /** Receives prediction.output only. Return real files; text-only predictions are outside this contract. */
-  readonly mapResult: (output: JSONValue) => AssetModelV1Result | PromiseLike<AssetModelV1Result>;
+}
+
+/** Native JSON is forwarded by default; an optional result mapper receives prediction.output. */
+export interface ReplicateAssetDefinition<INPUT = JSONObject, KIND extends string = string> extends ReplicateAssetMapping<INPUT> {
+  readonly kind: KIND;
 }
 
 interface PredictionOperation extends JSONObject {
@@ -56,26 +56,24 @@ export class ReplicateAssetModel<INPUT, KIND extends string> implements AssetMod
     readonly modelId: string,
     settings: ReplicateAssetProviderSettings,
     definition: ReplicateAssetDefinition<INPUT, KIND>,
-    private readonly validateInput?: (input: JSONObject) => void,
   ) {
     const parsed = typeof modelId === 'string' ? MODEL_ID.exec(modelId) : null;
     if (!parsed) throw new TypeError('Replicate modelId must be owner/model, optionally followed by a full :version.');
     this.model = `${parsed[1]}/${parsed[2]}`;
-    if (definition.version !== undefined && !VERSION.test(definition.version)) {
+    const version = definition.version;
+    const kind = definition.kind;
+    if (version !== undefined && !VERSION.test(version)) {
       throw new TypeError('Replicate version must be a full 64-character lowercase hexadecimal version ID.');
     }
-    if (parsed[3] !== undefined && definition.version !== undefined && parsed[3] !== definition.version) {
+    if (parsed[3] !== undefined && version !== undefined && parsed[3] !== version) {
       throw new TypeError('Replicate modelId version conflicts with definition.version.');
     }
-    this.versionId = parsed[3] ?? definition.version;
-    if (typeof definition.kind !== 'string' || !definition.kind.trim()) {
+    this.versionId = parsed[3] ?? version;
+    if (typeof kind !== 'string' || !kind.trim()) {
       throw new TypeError('Replicate asset kind must be a nonempty string.');
     }
-    if (typeof definition.mapInput !== 'function' || typeof definition.mapResult !== 'function') {
-      throw new TypeError('Replicate asset definitions require mapInput and mapResult functions.');
-    }
-    this.definition = { ...definition };
-    this.kind = definition.kind;
+    this.definition = { ...snapshotAssetMapping(definition), kind, ...(version === undefined ? {} : { version }) };
+    this.kind = kind;
     this.provider = settings.name ?? 'replicate';
     this.transport = new AssetProviderTransport({
       ...settings,
@@ -87,7 +85,8 @@ export class ReplicateAssetModel<INPUT, KIND extends string> implements AssetMod
   }
 
   async doStart(options: AssetModelV1CallOptions<INPUT>): Promise<AssetModelV1StartResult> {
-    const input = jsonObject(await this.definition.mapInput(options.input), 'Replicate mapped input');
+    const input = jsonObject(this.definition.mapInput === undefined
+      ? options.input : await this.definition.mapInput(options.input), 'Replicate input');
     const extra = jsonObject(options.providerOptions.replicate ?? {}, 'providerOptions.replicate');
     for (const key of Object.keys(extra)) {
       if (Object.hasOwn(input, key)) {
@@ -95,7 +94,6 @@ export class ReplicateAssetModel<INPUT, KIND extends string> implements AssetMod
       }
     }
     const body: JSONObject = { input: { ...extra, ...input } };
-    this.validateInput?.(body.input as JSONObject);
     if (this.versionId !== undefined) body.version = this.versionId;
     if (options.webhookUrl !== undefined) {
       const webhook = httpURL(options.webhookUrl, 'Replicate webhookUrl');
@@ -141,7 +139,7 @@ export class ReplicateAssetModel<INPUT, KIND extends string> implements AssetMod
         case 'succeeded': {
           // Snapshot before calling application code. A mapper must not change the retained native output.
           const output = jsonValue(prediction.output, 'Replicate prediction output');
-          const result = await this.definition.mapResult(jsonValue(output, 'Replicate mapper output'));
+          const result = await (this.definition.mapResult ?? mapAssetResult)(jsonValue(output, 'Replicate mapper output'));
           if (!result || !Array.isArray(result.assets) || result.assets.length === 0) {
             throw new TypeError('Replicate mapResult must return at least one real asset.');
           }

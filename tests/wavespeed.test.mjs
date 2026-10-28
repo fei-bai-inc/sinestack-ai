@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
 import { cancelAsset, getAssetStatus, startAsset, waitForAsset } from '@sine-ai/core';
-import { createWaveSpeedAssetProvider, WAVESPEED_MUSIC_MODEL, WAVESPEED_THREE_D_MODEL, WaveSpeedAssetModel } from '@sine-ai/wavespeed';
+import { createWaveSpeedAssetProvider, WaveSpeedAssetModel } from '@sine-ai/wavespeed';
 
+const MUSIC_MODEL = 'future-org/music-generation/v42';
+const THREE_D_MODEL = 'future-org/shapes/v42/text-to-mesh';
 const BASE = 'https://api.wavespeed.ai/api/v3';
 const ID = 'pred_abc123';
 const URL_FILE = 'https://cdn.example/asset.glb';
@@ -12,11 +14,11 @@ function json(value, status = 200, headers = {}) {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json', ...headers } });
 }
 
-function prediction(status = 'created', extra = {}, model = WAVESPEED_THREE_D_MODEL) {
+function prediction(status = 'created', extra = {}, model = THREE_D_MODEL) {
   return { code: 200, message: 'success', data: { id: ID, model, status, outputs: [], ...extra } };
 }
 
-function operation(modelId = WAVESPEED_THREE_D_MODEL, baseURL = BASE) {
+function operation(modelId = THREE_D_MODEL, baseURL = BASE) {
   return { type: 'wavespeed-prediction', version: 1, modelId, baseURL, predictionId: ID };
 }
 
@@ -45,7 +47,7 @@ function scripted(...steps) {
 test('WaveSpeed submits once, retaining the full model path and configured credentials', async () => {
   const wire = scripted(json(prediction(), 200, { 'x-request-id': ID }));
   const provider = createWaveSpeedAssetProvider({ apiKey: 'private-token', fetch: wire.fetch, headers: { 'x-client': 'sine' }, name: 'tenant-wave' });
-  const model = provider.threeD();
+  const model = provider.threeD(THREE_D_MODEL);
   const options = startOptions(undefined, {
     providerOptions: { wavespeed: { texture: true, geometry_quality: 'detailed', face_limit: 50_000, model_seed: 7 } },
     headers: { Authorization: 'untrusted', 'x-call': 'start' },
@@ -57,7 +59,7 @@ test('WaveSpeed submits once, retaining the full model path and configured crede
   assert.equal(model.doCancel, undefined);
   assert.equal(wire.calls.length, 1);
   const [call] = wire.calls;
-  assert.equal(call.url, `${BASE}/tripo3d/h3.1/text-to-3d`);
+  assert.equal(call.url, `${BASE}/${THREE_D_MODEL}`);
   assert.equal(call.method, 'POST');
   assert.equal(call.signal, options.abortSignal);
   assert.equal(call.redirect, 'error');
@@ -72,10 +74,10 @@ test('WaveSpeed submits once, retaining the full model path and configured crede
   assert.equal(JSON.stringify(result.operation).includes('private-token'), false);
 });
 
-test('WaveSpeed music maps unified lyrics and instrumental to native inputs', async () => {
-  const wire = scripted(json(prediction('created', {}, WAVESPEED_MUSIC_MODEL)));
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).music();
-  await model.doStart(startOptions({ prompt: 'Quiet ambient piano', lyrics: '', instrumental: true }, {
+test('WaveSpeed music forwards native fields without a model-specific mapping', async () => {
+  const wire = scripted(json(prediction('created', {}, MUSIC_MODEL)));
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).music(MUSIC_MODEL);
+  await model.doStart(startOptions({ prompt: 'Quiet ambient piano', lyrics: '', is_instrumental: true }, {
     providerOptions: { wavespeed: { bitrate: 128000, sample_rate: 24000 } },
   }));
   assert.deepEqual(JSON.parse(wire.calls[0].body), {
@@ -86,7 +88,7 @@ test('WaveSpeed music maps unified lyrics and instrumental to native inputs', as
 test('WaveSpeed returns URL references with accurate MIME fallbacks and native output preservation', async () => {
   const output = [URL_FILE, 'https://cdn.example/texture.png', { url: 'https://cdn.example/opaque', content_type: 'application/zip', file_name: 'model.zip', file_size: 42 }];
   const wire = scripted(json(prediction('completed', { outputs: output })));
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
   const result = await model.doStatus(statusOptions());
   assert.equal(result.status, 'completed');
   assert.equal(wire.calls.length, 1);
@@ -97,8 +99,8 @@ test('WaveSpeed returns URL references with accurate MIME fallbacks and native o
 });
 
 test('WaveSpeed music does not assume an unknown output is MP3', async () => {
-  const wire = scripted(json(prediction('completed', { outputs: ['https://cdn.example/song.flac', 'https://cdn.example/opaque'] }, WAVESPEED_MUSIC_MODEL)));
-  const result = await createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).music().doStatus(statusOptions(operation(WAVESPEED_MUSIC_MODEL)));
+  const wire = scripted(json(prediction('completed', { outputs: ['https://cdn.example/song.flac', 'https://cdn.example/opaque'] }, MUSIC_MODEL)));
+  const result = await createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).music(MUSIC_MODEL).doStatus(statusOptions(operation(MUSIC_MODEL)));
   assert.equal(result.result.assets[0].mediaType, 'audio/flac');
   assert.equal(result.result.assets[1].mediaType, 'application/octet-stream');
 });
@@ -131,7 +133,7 @@ test('WaveSpeed generic mapping preserves native output before custom mapper mut
 test('WaveSpeed status handles documented terminal states and future nonterminal states', async () => {
   const statuses = ['created', 'queued', 'processing', 'new-stage', 'cancelled', 'failed', 'timeout', 'deleted'];
   const wire = scripted(...statuses.map(status => json(prediction(status, { error: 'provider detail', code: 5004 }))));
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
   for (const [index, expected] of ['pending', 'pending', 'running', 'running', 'cancelled', 'failed', 'failed', 'failed'].entries()) {
     const result = await model.doStatus(statusOptions());
     assert.equal(result.status, expected, statuses[index]);
@@ -149,7 +151,7 @@ test('WaveSpeed sync timeout with an accepted prediction ID remains resumable', 
     json(prediction('processing', { code: 5004, error: 'Still running' })),
     json(prediction('completed', { outputs: [URL_FILE] })),
   );
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
   const started = await startAsset({ model, input: { prompt: 'A sculpture' }, providerOptions: { wavespeed: { enable_sync_mode: true } } });
   const persisted = JSON.parse(JSON.stringify(started.operation));
   assert.equal((await getAssetStatus({ model, operation: persisted })).status, 'running');
@@ -160,7 +162,7 @@ test('WaveSpeed sync timeout with an accepted prediction ID remains resumable', 
 
 test('WaveSpeed standard webhooks are encoded and use the same result query', async () => {
   const wire = scripted(json(prediction()));
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
   const webhookUrl = 'https://app.example/webhooks?tenant=a&job=b';
   await model.doStart(startOptions(undefined, { webhookUrl }));
   assert.equal(new URL(wire.calls[0].url).searchParams.get('standard_webhook'), webhookUrl);
@@ -169,21 +171,21 @@ test('WaveSpeed standard webhooks are encoded and use the same result query', as
 
 test('WaveSpeed rejects unsupported sync/webhook and base64 combinations before any paid submission', async () => {
   const wire = scripted();
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
   await assert.rejects(model.doStart(startOptions(undefined, { webhookUrl: 'http://app.example/hook' })), /HTTPS/);
   await assert.rejects(model.doStart(startOptions(undefined, { webhookUrl: 'https://app.example/hook', providerOptions: { wavespeed: { enable_sync_mode: true } } })), /cannot be combined/);
-  await assert.rejects(model.doStart(startOptions(undefined, { providerOptions: { wavespeed: { enable_base64_output: true } } })), /not supported/);
+  await assert.rejects(model.doStart(startOptions(undefined, { providerOptions: { wavespeed: { enable_base64_output: true } } })), /requires an explicit mapResult/);
   await assert.rejects(model.doStart(startOptions(undefined, { providerOptions: { wavespeed: { enable_sync_mode: 'true' } } })), /boolean/);
   const generic = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).asset('vendor/model', { kind: 'music', mapInput: input => input, mapResult: () => ({ assets: [] }) });
-  await assert.rejects(generic.doStart(startOptions({ enable_base64_output: true })), /not supported/);
+  await assert.rejects(generic.doStart(startOptions({ enable_base64_output: true }, { webhookUrl: 'https://app.example/hook' })), /cannot be combined/);
   assert.equal(wire.calls.length, 0);
 });
 
 test('WaveSpeed checks model, prediction, and baseURL identities before network and credentials', async () => {
   const wire = scripted();
-  const model = createWaveSpeedAssetProvider({ fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ fetch: wire.fetch }).threeD(THREE_D_MODEL);
   for (const changed of [
-    { type: 'other' }, { version: 2 }, { modelId: WAVESPEED_MUSIC_MODEL },
+    { type: 'other' }, { version: 2 }, { modelId: MUSIC_MODEL },
     { baseURL: 'https://attacker.example/api/v3' }, { baseURL: `${BASE}/other` },
     { predictionId: '../steal' }, { predictionId: 'id?token' }, { predictionId: '' },
   ]) await assert.rejects(model.doStatus(statusOptions({ ...operation(), ...changed })), TypeError);
@@ -201,15 +203,15 @@ test('WaveSpeed custom baseURL, path prefix, and headers are snapshotted', async
   settings.baseURL = 'https://attacker.example';
   settings.apiKey = 'changed';
   settings.headers['x-tenant'] = 'b';
-  const model = provider.threeD();
+  const model = provider.threeD(THREE_D_MODEL);
   const started = await model.doStart(startOptions());
   assert.equal(started.operation.baseURL, custom);
   await model.doStatus(statusOptions(JSON.parse(JSON.stringify(started.operation))));
-  assert.equal(wire.calls[0].url, `${custom}/${WAVESPEED_THREE_D_MODEL}`);
+  assert.equal(wire.calls[0].url, `${custom}/${THREE_D_MODEL}`);
   assert.equal(wire.calls[1].url, `${custom}/predictions/${ID}/result`);
   assert.ok(wire.calls.every(call => call.headers.get('authorization') === 'Bearer original' && call.headers.get('x-tenant') === 'a'));
   const directSettings = { apiKey: 'original', baseURL: custom, fetch: scripted(json(prediction())).fetch };
-  const direct = new WaveSpeedAssetModel(WAVESPEED_THREE_D_MODEL, directSettings, { kind: 'model-3d', mapInput: input => input, mapResult: () => ({ assets: [] }) });
+  const direct = new WaveSpeedAssetModel(THREE_D_MODEL, directSettings, { kind: 'model-3d', mapInput: input => input, mapResult: () => ({ assets: [] }) });
   directSettings.baseURL = 'https://attacker.example';
   assert.equal((await direct.doStart(startOptions())).operation.baseURL, custom);
 });
@@ -223,7 +225,7 @@ test('WaveSpeed rejects malformed, mismatched, and non-file completed responses 
     prediction('completed', { outputs: [{ status: 'done' }] }), { code: 403, message: 'Denied', data: {} },
   ]) {
     const wire = scripted(json(body));
-    const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+    const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
     await assert.rejects(model.doStatus(statusOptions()), error => APICallError.isInstance(error) && error.isRetryable === false);
     assert.equal(wire.calls.length, 1);
   }
@@ -231,26 +233,26 @@ test('WaveSpeed rejects malformed, mismatched, and non-file completed responses 
 
 test('WaveSpeed ignores untrusted provider-supplied request URLs and rejects redirects', async () => {
   const wire = scripted(json(prediction('created', { urls: { get: 'https://attacker.example/result' } })), json(prediction('processing')));
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
   const started = await model.doStart(startOptions());
   await model.doStatus(statusOptions(started.operation));
   assert.equal(wire.calls[1].url, `${BASE}/predictions/${ID}/result`);
   assert.equal('urls' in started.operation, false);
   const redirected = json(prediction());
   Object.defineProperty(redirected, 'redirected', { value: true });
-  const redirectedModel = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: scripted(redirected).fetch }).threeD();
+  const redirectedModel = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: scripted(redirected).fetch }).threeD(THREE_D_MODEL);
   await assert.rejects(redirectedModel.doStart(startOptions()), error => APICallError.isInstance(error) && error.isRetryable === false);
 });
 
 test('WaveSpeed submission errors are never retried and a status retry is delegated to the shared core', async () => {
   const failedWire = scripted(json({ message: 'busy' }, 503));
-  const failedModel = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: failedWire.fetch }).threeD();
+  const failedModel = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: failedWire.fetch }).threeD(THREE_D_MODEL);
   await assert.rejects(startAsset({ model: failedModel, input: { prompt: 'A sculpture' } }));
   assert.equal(failedWire.calls.length, 1);
   await assert.rejects(startAsset({ model: failedModel, input: { prompt: 'A sculpture' }, retry: { start: 1 } }), /idempotent/);
   assert.equal(failedWire.calls.length, 1);
   const wire = scripted(json(prediction()), json({ message: 'slow down' }, 429, { 'retry-after': '0.001' }), json(prediction('completed', { outputs: [URL_FILE] })));
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
   const started = await startAsset({ model, input: { prompt: 'A sculpture' } });
   const result = await getAssetStatus({ model, operation: started.operation, retry: { status: 1 } });
   assert.equal(result.status, 'completed');
@@ -260,7 +262,7 @@ test('WaveSpeed submission errors are never retried and a status retry is delega
 test('WaveSpeed HTTP errors retain AI SDK retryability including 409', async () => {
   for (const [status, retryable] of [[400, false], [401, false], [408, true], [409, true], [429, true], [503, true]]) {
     const wire = scripted(json({ message: 'upstream error' }, status, { 'retry-after': '4' }));
-    const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+    const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
     await assert.rejects(model.doStatus(statusOptions()), error => APICallError.isInstance(error) && error.statusCode === status && error.isRetryable === retryable && error.responseHeaders['retry-after'] === '4');
     assert.equal(wire.calls.length, 1);
   }
@@ -271,7 +273,7 @@ test('WaveSpeed passes cancellation signals through and does not submit an abort
   const reason = new Error('Stopped');
   aborted.abort(reason);
   const wire = scripted();
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
   await assert.rejects(model.doStart(startOptions(undefined, { abortSignal: aborted.signal })), error => error === reason);
   assert.equal(wire.calls.length, 0);
   const active = new AbortController();
@@ -280,13 +282,13 @@ test('WaveSpeed passes cancellation signals through and does not submit an abort
     call.signal.addEventListener('abort', () => reject(call.signal.reason), { once: true });
     active.abort(reason);
   }));
-  await assert.rejects(createWaveSpeedAssetProvider({ apiKey: 'token', fetch: activeWire.fetch }).threeD().doStatus(statusOptions(undefined, { abortSignal: active.signal })), error => error === reason);
+  await assert.rejects(createWaveSpeedAssetProvider({ apiKey: 'token', fetch: activeWire.fetch }).threeD(THREE_D_MODEL).doStatus(statusOptions(undefined, { abortSignal: active.signal })), error => error === reason);
   assert.equal(activeWire.calls.length, 1);
 });
 
 test('WaveSpeed runs through existing wait/resume flow and unsupported cancel sends no delete request', async () => {
   const wire = scripted(json(prediction()), json(prediction('processing')), json(prediction('completed', { outputs: [URL_FILE] })));
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
   const started = await startAsset({ model, input: { prompt: 'A sculpture' } });
   const result = await waitForAsset({ model, operation: JSON.parse(JSON.stringify(started.operation)), poll: { intervalMs: 1, delay: async () => {} } });
   assert.equal(result.asset.url, URL_FILE);
@@ -295,26 +297,111 @@ test('WaveSpeed runs through existing wait/resume flow and unsupported cancel se
   assert.deepEqual(wire.calls.map(call => call.method), ['POST', 'GET', 'GET']);
 });
 
-test('WaveSpeed presets validate inputs and model IDs before dispatch', async () => {
+test('WaveSpeed validates model IDs and optional mappings before dispatch', () => {
   const wire = scripted();
   const provider = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch });
-  for (const bad of [{ prompt: '' }, { prompt: 'x'.repeat(1025) }, { prompt: 'x', seed: 1 }]) await assert.rejects(provider.threeD().doStart(startOptions(bad)), TypeError);
-  for (const bad of [{ prompt: '' }, { prompt: 'x', lyrics: 'short' }, { prompt: 'x', instrumental: 'yes' }]) await assert.rejects(provider.music().doStart(startOptions(bad)), TypeError);
-  for (const extra of [{ prompt: 'override' }, { face_limit: 999 }, { texture: 'true' }, { geometry_quality: 'ultra' }, { model_seed: 1.5 }]) await assert.rejects(provider.threeD().doStart(startOptions(undefined, { providerOptions: { wavespeed: extra } })), TypeError);
-  await assert.rejects(provider.music().doStart(startOptions({ prompt: 'Music' }, { providerOptions: { wavespeed: { is_instrumental: true } } })), TypeError);
-  for (const id of ['bad', '../escape', 'vendor/../model', 'vendor/model?key=value', 'https://attacker.example/model']) {
-    assert.throws(() => provider.asset(id, { kind: 'music', mapInput: input => input, mapResult: () => ({ assets: [] }) }), TypeError);
+  for (const id of [undefined, '', 'bad', '../escape', 'vendor/../model', 'vendor/model?key=value', 'https://attacker.example/model']) {
+    assert.throws(() => provider.asset(id, { kind: 'music' }), TypeError);
+    for (const method of ['music', 'threeD', 'soundEffect', 'animation3D']) {
+      assert.throws(() => provider[method](id), TypeError);
+    }
   }
-  assert.throws(() => provider.music('vendor/other'), /Unsupported/);
-  assert.throws(() => provider.threeD('vendor/other'), /Unsupported/);
-  assert.throws(() => provider.asset('vendor/model', { kind: 'music', mapInput: input => input }), /mapInput and mapResult/);
-  assert.throws(() => provider.asset('vendor/model', { kind: 'music', mapResult: () => ({ assets: [] }) }), /mapInput and mapResult/);
+  for (const mapping of [{ mapInput: null }, { mapResult: false }, { mapInput: 'invalid' }]) {
+    assert.throws(() => provider.asset('vendor/model', { kind: 'music', ...mapping }), /map(Input|Result) must be a function/);
+  }
+  assert.equal(provider.asset('vendor/model', { kind: 'music' }).modelId, 'vendor/model');
   assert.equal(wire.calls.length, 0);
+});
+
+test('WaveSpeed capability helpers accept unseen models and arbitrary native JSON without registering a preset', async () => {
+  const native = { prompt: '', duration: 300, quality: 'future-quality', custom_parameters: { enabled: true, labels: ['one', 'two'] } };
+  for (const [method, kind, extension] of [
+    ['music', 'music', 'wav'], ['threeD', 'model-3d', 'glb'],
+    ['soundEffect', 'sound-effect', 'flac'], ['animation3D', 'animation-3d', 'fbx'],
+  ]) {
+    const id = 'future-provider/new-model/' + method;
+    const url = 'https://cdn.example/new-output.' + extension;
+    const wire = scripted(json(prediction('created', {}, id)), json(prediction('completed', { outputs: [url] }, id)));
+    const provider = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch });
+    const model = provider[method](id);
+    assert.equal(model.kind, kind);
+    const started = await startAsset({ model, input: native, providerOptions: { wavespeed: { new_option: 7 } } });
+    assert.deepEqual(JSON.parse(wire.calls[0].body), { ...native, new_option: 7 });
+    const status = await getAssetStatus({ model, operation: JSON.parse(JSON.stringify(started.operation)) });
+    assert.equal(status.status, 'completed');
+    assert.equal(status.result.assets[0].url, url);
+    assert.deepEqual(wire.calls.map(call => call.method), ['POST', 'GET']);
+  }
+});
+
+test('WaveSpeed optional external input mapping works with the default result mapper', async () => {
+  const id = 'new-vendor/custom-input/v2';
+  const wire = scripted(json(prediction('created', {}, id)), json(prediction('completed', {
+    outputs: [{ generated: { url: 'https://cdn.example/report.pdf', content_type: 'application/pdf' } }],
+  }, id)));
+  const definition = { kind: 'document', mapInput: value => ({ description: value.title, pages: value.pages }) };
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).asset(id, definition);
+  definition.mapInput = () => { throw new Error('must use the saved mapper'); };
+  const started = await model.doStart(startOptions({ title: 'A report', pages: 4 }));
+  assert.deepEqual(JSON.parse(wire.calls[0].body), { description: 'A report', pages: 4 });
+  const status = await model.doStatus(statusOptions(started.operation));
+  assert.equal(status.result.assets[0].mediaType, 'application/pdf');
+});
+
+test('WaveSpeed bare base64 output is available with an externally supplied result mapper', async () => {
+  const id = 'custom-audio/raw/v2';
+  const wire = scripted(json(prediction('created', {}, id)), json(prediction('completed', { outputs: ['AA=='] }, id)));
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).music(id, {
+    mapResult: output => ({ assets: [{ type: 'base64', data: output[0], mediaType: 'audio/wav' }] }),
+  });
+  const started = await startAsset({ model, input: { text: 'Create a tone', enable_base64_output: true } });
+  const status = await getAssetStatus({ model, operation: started.operation });
+  assert.equal(status.result.assets[0].type, 'base64');
+  assert.equal(status.result.assets[0].data, 'AA==');
+  assert.deepEqual(status.result.providerMetadata.wavespeed.output, ['AA==']);
+  assert.deepEqual(wire.calls.map(call => call.method), ['POST', 'GET']);
+});
+
+test('WaveSpeed accepts class mapping services and snapshots prototype methods with their original receiver', async () => {
+  const id = 'external-team/independent-model';
+  const outputs = [{ generated: 'https://cdn.example/external.asset' }];
+  for (const entry of ['music', 'threeD', 'soundEffect', 'animation3D', 'asset', 'constructor']) {
+    class ExternalMapping {
+      kind = 'external-asset';
+      #prefix = 'External: ';
+      #mediaType = 'application/x-external';
+      async mapInput(input) {
+        await Promise.resolve();
+        return { description: this.#prefix + input.title };
+      }
+      async mapResult(output) {
+        await Promise.resolve();
+        return { assets: [{ type: 'url', url: output[0].generated, mediaType: this.#mediaType }] };
+      }
+    }
+    const wire = scripted(json(prediction('created', {}, id)), json(prediction('completed', { outputs }, id)));
+    const settings = { apiKey: 'token', fetch: wire.fetch };
+    const provider = createWaveSpeedAssetProvider(settings);
+    const mapping = new ExternalMapping();
+    const model = entry === 'constructor'
+      ? new WaveSpeedAssetModel(id, settings, mapping)
+      : provider[entry](id, mapping);
+    const initialKind = model.kind;
+    mapping.kind = 'changed-kind';
+    mapping.mapInput = () => { throw new Error('Instance method was replaced'); };
+    ExternalMapping.prototype.mapResult = () => { throw new Error('Prototype method was replaced'); };
+    const started = await model.doStart(startOptions({ title: 'A custom asset' }));
+    const status = await model.doStatus(statusOptions(started.operation));
+    assert.equal(model.kind, initialKind);
+    assert.deepEqual(JSON.parse(wire.calls[0].body), { description: 'External: A custom asset' });
+    assert.deepEqual(status.result.assets, [{ type: 'url', url: outputs[0].generated, mediaType: 'application/x-external' }]);
+    assert.equal(wire.calls.length, 2);
+  }
 });
 
 test('WaveSpeed validates native JSON and prevents provider options overriding native mapped fields', async () => {
   const wire = scripted();
-  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).asset('vendor/model', { kind: 'music', mapInput: input => input, mapResult: () => ({ assets: [] }) });
+  const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).asset('vendor/model', { kind: 'music' });
   await assert.rejects(model.doStart(startOptions({ prompt: 'x', frames: 20 }, { providerOptions: { wavespeed: { frames: 30 } } })), /override/);
   const cyclic = {}; cyclic.self = cyclic;
   await assert.rejects(model.doStart(startOptions(cyclic)), /JSON/);
@@ -323,8 +410,8 @@ test('WaveSpeed validates native JSON and prevents provider options overriding n
   const getterInput = { get prompt() { getterCalls += 1; return 'unsafe'; } };
   await assert.rejects(model.doStart(startOptions(getterInput)), /JSON/);
   const provider = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch });
-  await assert.rejects(provider.music().doStart(startOptions(getterInput)), /JSON/);
-  await assert.rejects(provider.threeD().doStart(startOptions(getterInput)), /JSON/);
+  await assert.rejects(provider.music(MUSIC_MODEL).doStart(startOptions(getterInput)), /JSON/);
+  await assert.rejects(provider.threeD(THREE_D_MODEL).doStart(startOptions(getterInput)), /JSON/);
   assert.equal(getterCalls, 0);
   assert.equal(wire.calls.length, 0);
 });
@@ -337,7 +424,7 @@ test('WaveSpeed rejects malformed submission receipts without a second POST', as
     new Response('not json', { status: 200 }),
   ]) {
     const wire = scripted(response);
-    const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD();
+    const model = createWaveSpeedAssetProvider({ apiKey: 'token', fetch: wire.fetch }).threeD(THREE_D_MODEL);
     await assert.rejects(startAsset({ model, input: { prompt: 'A sculpture' } }));
     assert.equal(wire.calls.length, 1);
   }

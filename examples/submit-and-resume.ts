@@ -30,10 +30,10 @@ export async function submit3DTask(
   taskId: string,
   prompt: string,
   store: OperationStore,
-  options: { webhookUrl?: string; abortSignal?: AbortSignal } = {},
+  options: { modelId: string; webhookUrl?: string; abortSignal?: AbortSignal },
 ) {
   const result = await startAsset({
-    model: falConnection().threeD(),
+    model: falConnection().threeD(options.modelId),
     input: { prompt },
     abortSignal: options.abortSignal,
     webhookUrl: options.webhookUrl,
@@ -55,9 +55,10 @@ export async function submit3DTask(
 
 /** Use from a task worker or a status endpoint. One status observation; never submits. */
 export async function read3DTaskStatus(taskId: string, store: OperationStore, abortSignal?: AbortSignal) {
+  const operation = await loadOperation(store, taskId);
   return await getAssetStatus({
-    model: falConnection().threeD(),
-    operation: await loadOperation(store, taskId),
+    model: falConnection().threeD(operation.modelId),
+    operation,
     abortSignal,
     timeoutMs: 30_000,
     retry: { status: 2 },
@@ -66,9 +67,10 @@ export async function read3DTaskStatus(taskId: string, store: OperationStore, ab
 
 /** For a worker that can remain active while waiting; process restarts reuse the same stored JSON. */
 export async function waitFor3DTask(taskId: string, store: OperationStore, abortSignal?: AbortSignal) {
+  const operation = await loadOperation(store, taskId);
   return await waitForAsset({
-    model: falConnection().threeD(),
-    operation: await loadOperation(store, taskId),
+    model: falConnection().threeD(operation.modelId),
+    operation,
     abortSignal,
     timeoutMs: 20 * 60_000,
     poll: { intervalMs: 2_000, timeoutMs: 20 * 60_000 },
@@ -78,9 +80,10 @@ export async function waitFor3DTask(taskId: string, store: OperationStore, abort
 
 /** Explicit remote cancellation. A local AbortSignal only ends the local SDK invocation. */
 export async function cancel3DTask(taskId: string, store: OperationStore, abortSignal?: AbortSignal) {
+  const operation = await loadOperation(store, taskId);
   const result = await cancelAsset({
-    model: falConnection().threeD(),
-    operation: await loadOperation(store, taskId),
+    model: falConnection().threeD(operation.modelId),
+    operation,
     abortSignal,
     timeoutMs: 30_000,
   });

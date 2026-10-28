@@ -1,9 +1,9 @@
 # @sine-ai/wavespeed
 
-WaveSpeed 的 Sine AI asset provider。音乐、3D 和自定义资产模型共用 prediction 协议；提交、查询分别只执行一次 HTTP 操作，重试与等待交给 `@sine-ai/core`。
+WaveSpeed 的通用 Sine AI asset provider。包不维护模型清单、不选择默认模型，也不为某个模型写死参数 schema。只要模型使用 WaveSpeed prediction 协议，就可以传入它的完整模型 ID 和原生 JSON 输入。所有能力共用单次提交/查询协议，重试与等待交给 `@sine-ai/core`。
 
 ```ts
-import { generateMusic, generate3D } from '@sine-ai/core';
+import { generateMusic } from '@sine-ai/core';
 import { createWaveSpeedAssetProvider } from '@sine-ai/wavespeed';
 
 const wavespeed = createWaveSpeedAssetProvider({
@@ -11,63 +11,67 @@ const wavespeed = createWaveSpeedAssetProvider({
   // baseURL 默认为 https://api.wavespeed.ai/api/v3，代理地址也需包含 API 路径。
 });
 
+const modelId = 'your-provider/your-music-model'; // 来自应用配置，无需向 SDK 注册
 const song = await generateMusic({
-  model: wavespeed.music(),
-  prompt: 'Calm ambient piano with soft pads',
-  instrumental: true,
-  providerOptions: { wavespeed: { sample_rate: 44100, bitrate: 256000 } },
-});
-
-const model = await generate3D({
-  model: wavespeed.threeD(),
-  prompt: 'A blue ceramic teapot',
-  providerOptions: { wavespeed: { texture: true, pbr: true } },
-});
-```
-
-## 模型与原生映射
-
-| 方法 | 模型 | 输入 |
-| --- | --- | --- |
-| `music()` | `minimax/music-2.6` | `prompt`、`lyrics?`、`instrumental?`；后者映射为 `is_instrumental` |
-| `threeD()` | `tripo3d/h3.1/text-to-3d` | `prompt`；纹理、质量、面数等通过 `providerOptions.wavespeed` 设置 |
-| `asset(modelId, definition)` | 完整原生模型路径 | `mapInput` 返回原生 JSON；`mapResult` 接收 `data.outputs` 数组 |
-
-两个预设只接受各自的模型 ID。其他端点使用 `asset()` 并提供该端点的输入、输出映射。`providerOptions.wavespeed` 可补充原生参数，不能覆盖 `mapInput` 已返回的字段。
-
-```ts
-const custom = wavespeed.asset<{ prompt: string }, 'model-3d'>('vendor/model/variant', {
-  kind: 'model-3d',
-  mapInput: input => ({ prompt: input.prompt }),
-  mapResult: output => {
-    // 按目标模型的实际 schema 校验并提取文件，不能把任意文本当作文件 URL。
-    const values = output as Array<{ mesh_url: string }>;
-    return {
-      assets: values.map(value => ({
-        type: 'url' as const,
-        url: value.mesh_url,
-        mediaType: 'model/gltf-binary',
-      })),
-    };
+  model: wavespeed.music(modelId),
+  input: {
+    // 这些字段应按所选模型的原生 schema 提供，不做跨模型字段猜测。
+    prompt: 'Calm ambient piano with soft pads',
+    is_instrumental: true,
   },
 });
+console.log(song.assets, song.providerMetadata?.wavespeed?.output);
 ```
 
-成功结果的 `providerMetadata.wavespeed.output` 保留原生 `data.outputs` 的 JSON 快照，`assets` 提供统一文件视图。预设接受 URL 字符串或显式文件对象 `{ url, content_type?, file_name?, file_size? }`。复杂嵌套结构使用自定义 `mapResult`。没有文件的文本/结构化结果不属于当前 asset 契约。
+## 能力入口与可注入映射
 
-文件默认保留 URL；不会隐式下载。MIME 优先读取明确的 `content_type`，其次使用已知文件扩展名，无法确定时为 `application/octet-stream`，不会假定音乐均为 MP3 或 3D 产物均为 GLB。
+`music(modelId)`、`threeD(modelId)`、`soundEffect(modelId)`、`animation3D(modelId)` 只标记资产 kind；它们均接受任意安全模型 ID。自定义资产使用 `asset(modelId, { kind })`。模型 ID 必须显式传入，可以包含多段路径；不提供默认型号或内部白名单。
 
-## 提交、恢复和能力边界
+默认输入直接作为原生 JSON body 提交。模型可以定义任意字段、嵌套 JSON、时长、种子或专有参数；SDK 只做 JSON 与协议校验，模型 schema 由服务端或应用负责。也可传 `providerOptions.wavespeed` 补充字段，但不能覆盖输入已有的键。
 
-`startAsset` 返回的 operation 可 JSON 序列化；使用相同模型、相同 `baseURL`、相同 provider 连接重建后，通过 `getAssetStatus` 或 `waitForAsset` 恢复。operation 中只有协议版本、模型、API 地址和 prediction ID，不保存密钥。连接对应的租户、凭据和授权关系仍由宿主应用维护。
+特殊输入或结果结构可以外部实现后注入：
 
-提交默认不重试，模型声明 `idempotentStart: false`。查询错误的重试由 Sine AI core 调用官方 AI SDK 重试实现。任务的 `failed`、`timeout`、`deleted` 为失败终态，`cancelled` 为取消终态，其余非空状态保持等待。客户端中止不会取消远端任务。
+```ts
+const model = wavespeed.asset<{ description: string }, 'document'>(
+  'your-provider/your-document-model',
+  {
+    kind: 'document',
+    mapInput: ({ description }) => ({ text: description }),
+    mapResult(output) {
+      if (!Array.isArray(output)) throw new TypeError('Expected an output array');
+      const first = output[0];
+      if (!first || typeof first !== 'object' || Array.isArray(first) ||
+          !('file_url' in first) || typeof first.file_url !== 'string') {
+        throw new TypeError('Expected a file_url');
+      }
+      return {
+        assets: [{ type: 'url', url: first.file_url, mediaType: 'application/pdf' }],
+      };
+    },
+  },
+);
+```
 
-支持通过 `webhookUrl` 传入 `standard_webhook` HTTPS 地址；接收方必须自行验证签名并关联 prediction。Webhook 通知只唤醒现有 core，再查询同一个 prediction。
+`mapInput` 和 `mapResult` 都是可选的，也可作为能力方法的第二个参数注入。mapper 在创建模型时保存，后续修改配置对象不会替换已有模型行为。输入/结果映射只影响数据适配，不改变统一执行机制。
 
-- 默认使用异步提交。`enable_sync_mode: true` 可透传给支持同步模式的模型，但不能与 webhook 同时使用。同步等待结束时返回 `processing`、`code: 5004` 和 prediction ID，仍视为已提交并可恢复。
-- 本版本提前拒绝 `enable_base64_output: true`。使用 URL 输出，必要时显式调用 `materializeAsset`。
-- 不提供 `doCancel`。WaveSpeed 的删除接口用于删除已结束的任务记录，不能用于取消正在执行的生成。
+## 结果与文件
+
+`mapResult` 接收原生 `data.outputs`，不接收包含日志、输入和内部请求 URL 的 prediction envelope。默认 mapper 识别输出 URL、数组和显式文件对象 `{ url, content_type?, file_name?, file_size? }`；不把任意文本中的链接当成文件。特殊结构使用外部 mapper，而无需增加 SDK 模型清单。
+
+成功结果的 `providerMetadata.wavespeed.output` 保留独立原生 JSON 快照；`assets` 提供统一非空文件视图。mapper 修改自己的参数不会污染原生输出或原始 response body。没有文件的文本/结构化结果不属于当前 asset 契约。
+
+文件 URL 不会隐式下载。MIME 优先读取明确的 `content_type`，其次使用已知文件扩展名，无法判断时为 `application/octet-stream`。
+
+## 提交、恢复与能力边界
+
+`startAsset` 返回的 operation 可 JSON 序列化；使用相同模型、API 地址和原 provider 连接，通过 `getAssetStatus` 或 `waitForAsset` 恢复。operation 只含协议版本、模型、API 地址和 prediction ID，不保存密钥；应用负责原租户/连接的授权绑定。
+
+提交默认不重试，模型声明 `idempotentStart: false`。查询重试由现有 core 委托给 AI SDK。客户端中止不会取消远端任务，查询失败也不会创建替代任务。
+
+- 支持 HTTPS `standard_webhook`；接收端负责验证签名及关联 prediction，通知只唤醒对同一任务的查询。
+- `enable_sync_mode: true` 可以传给支持它的模型，但不能与 webhook 同用。同步等待超时若返回 prediction ID 和 `processing`，仍保留原任务。
+- `enable_base64_output: true` 需要显式注入 `mapResult`，由应用根据实际格式返回 base64 资产；不会猜测裸 base64 的 MIME。该模式不能与 webhook 同用。
+- 不提供 `doCancel`；WaveSpeed 的删除接口删除已结束的任务记录，不是取消正在运行的生成。
 
 ## 协议来源
 
@@ -77,5 +81,3 @@ const custom = wavespeed.asset<{ prompt: string }, 'model-3d'>('vendor/model/var
 - [Webhooks](https://wavespeed.ai/docs/how-to-use-webhooks)
 - [Base64 Output](https://wavespeed.ai/docs/base64-output)
 - [Delete Task](https://wavespeed.ai/docs/delete-task)
-- [MiniMax Music 2.6](https://wavespeed.ai/docs/docs-api/minimax/minimax-music-2.6)
-- [Tripo3D H3.1 Text-to-3D](https://wavespeed.ai/docs/docs-api/tripo3d/tripo3d-h3.1-text-to-3d)

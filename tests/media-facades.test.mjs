@@ -1,6 +1,27 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { generateAnimation3D, generateMusic } from '@sine-ai/core';
+import { generateAnimation3D, generateMusic, generate3D, generateSoundEffect } from '@sine-ai/core';
+
+for (const [kind, generate] of [
+  ['music', generateMusic], ['animation-3d', generateAnimation3D],
+  ['model-3d', generate3D], ['sound-effect', generateSoundEffect],
+]) {
+  test(`${kind} facade preserves arbitrary native input without a modality schema`, async () => {
+    const input = { description: 'Native model request', model_specific: { steps: 9999, enabled: false }, custom_array: ['one', 2] };
+    let calls = 0;
+    const model = {
+      specificationVersion: 'v1', provider: 'external', modelId: 'unregistered/new-model', kind,
+      async doGenerate(options) {
+        calls++;
+        assert.equal(options.input, input);
+        return { assets: [{ type: 'url', url: 'https://assets.example/output', mediaType: 'application/octet-stream' }] };
+      },
+    };
+    const result = await generate({ model, input });
+    assert.equal(calls, 1);
+    assert.equal(result.asset.url, 'https://assets.example/output');
+  });
+}
 
 test('music facade delegates one typed input to the shared executor and preserves native metadata', async () => {
   const phases = [];

@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
 import { startAsset, getAssetStatus } from '@sine-ai/core';
-import {
-  createFalAssetProvider, FAL_MUSIC_MODEL, FAL_ANIMATION_3D_MODEL,
-} from '@sine-ai/fal';
+import { createFalAssetProvider, FalAssetModel } from '@sine-ai/fal';
+
+const MUSIC_MODEL = 'future-org/music-engine/v99';
+const ANIMATION_3D_MODEL = 'future-org/motion-engine/v99';
 
 const BASE = 'https://queue.fal.run';
 const REQUEST_ID = 'media-request-1';
@@ -45,31 +46,31 @@ function scripted(...steps) {
   return { calls, fetch };
 }
 
-test('fal music maps common inputs and model options and resumes through the existing core', async () => {
+test('fal music passes native inputs and model options and resumes through the existing core', async () => {
   const native = {
     audio: { url: 'https://files.example/song.wav', content_type: 'audio/wav', file_name: 'song.wav', file_size: 1024 },
     extra_model_metadata: { duration: 123, sample_rate: 44100 },
   };
-  const wire = scripted(json(receipt(FAL_MUSIC_MODEL)), json({ status: 'COMPLETED' }), json(native));
+  const wire = scripted(json(receipt(MUSIC_MODEL)), json({ status: 'COMPLETED' }), json(native));
   const settings = { apiKey: 'test:key', fetch: wire.fetch };
-  const model = createFalAssetProvider(settings).music();
+  const model = createFalAssetProvider(settings).music(MUSIC_MODEL);
   assert.equal(model.kind, 'music');
-  assert.equal(model.modelId, FAL_MUSIC_MODEL);
+  assert.equal(model.modelId, MUSIC_MODEL);
   const started = await startAsset({
     model,
-    input: { prompt: 'Warm orchestral music with a cinematic rise', lyrics: '[Verse]\nThe sun is rising', instrumental: false },
+    input: { prompt: 'Warm orchestral music with a cinematic rise', lyrics: '[Verse]\nThe sun is rising', is_instrumental: false },
     providerOptions: { fal: { lyrics_optimizer: false, audio_setting: { format: 'wav', sample_rate: 44100, bitrate: 256000 } } },
   });
   assert.deepEqual(JSON.parse(wire.calls[0].body), {
     prompt: 'Warm orchestral music with a cinematic rise', lyrics: '[Verse]\nThe sun is rising', is_instrumental: false,
     lyrics_optimizer: false, audio_setting: { format: 'wav', sample_rate: 44100, bitrate: 256000 },
   });
-  assert.equal(wire.calls[0].url, `${BASE}/${FAL_MUSIC_MODEL}`);
+  assert.equal(wire.calls[0].url, `${BASE}/${MUSIC_MODEL}`);
   const restored = JSON.parse(JSON.stringify(started.operation));
-  const status = await getAssetStatus({ model: createFalAssetProvider(settings).music(), operation: restored });
+  const status = await getAssetStatus({ model: createFalAssetProvider(settings).music(MUSIC_MODEL), operation: restored });
   assert.equal(status.status, 'completed');
   assert.deepEqual(status.result.assets, [{
-    type: 'url', url: native.audio.url, mediaType: 'audio/wav', filename: 'song.wav', role: 'audio', metadata: { fileSize: 1024 },
+    type: 'url', url: native.audio.url, mediaType: 'audio/wav', filename: 'song.wav', metadata: { fileSize: 1024 },
   }]);
   assert.deepEqual(status.result.providerMetadata.fal.output, native);
   assert.equal(status.result.providerMetadata.fal.requestId, REQUEST_ID);
@@ -80,42 +81,42 @@ test('fal music maps common inputs and model options and resumes through the exi
 
 test('fal music accepts instrumental and generated-lyrics requests without inventing audio MIME types', async () => {
   const wire = scripted(
-    json(receipt(FAL_MUSIC_MODEL)), json(receipt(FAL_MUSIC_MODEL)),
+    json(receipt(MUSIC_MODEL)), json(receipt(MUSIC_MODEL)),
     json({ status: 'COMPLETED' }), json({ audio: { url: 'https://files.example/raw-output' } }),
   );
-  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).music();
-  await model.doStart(options({ prompt: 'A gentle acoustic instrumental', instrumental: true }));
-  await model.doStart(options({ prompt: 'A city pop song about coming home', lyrics: '', instrumental: false }, { fal: { lyrics_optimizer: true } }));
+  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).music(MUSIC_MODEL);
+  await model.doStart(options({ prompt: 'A gentle acoustic instrumental', is_instrumental: true }));
+  await model.doStart(options({ prompt: 'A city pop song about coming home', lyrics: '', is_instrumental: false }, { fal: { lyrics_optimizer: true } }));
   assert.deepEqual(JSON.parse(wire.calls[0].body), { prompt: 'A gentle acoustic instrumental', is_instrumental: true });
   assert.deepEqual(JSON.parse(wire.calls[1].body), {
     prompt: 'A city pop song about coming home', lyrics: '', is_instrumental: false, lyrics_optimizer: true,
   });
-  const status = await model.doStatus(operationOptions(FAL_MUSIC_MODEL));
+  const status = await model.doStatus(operationOptions(MUSIC_MODEL));
   assert.equal(status.result.assets[0].mediaType, 'application/octet-stream');
 });
 
-test('fal animation maps JSON format to dict and retains both returned file types', async () => {
+test('fal animation passes native formats and retains both returned file types', async () => {
   const native = {
     fbx_file: { url: 'https://files.example/walk.fbx', file_name: 'walk.fbx' },
     motion_json: { url: 'https://files.example/walk.json', file_size: 256 },
     seed: 42,
   };
-  const wire = scripted(json(receipt(FAL_ANIMATION_3D_MODEL)), json({ status: 'COMPLETED' }), json(native));
-  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).animation3D();
+  const wire = scripted(json(receipt(ANIMATION_3D_MODEL)), json({ status: 'COMPLETED' }), json(native));
+  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).animation3D(ANIMATION_3D_MODEL);
   assert.equal(model.kind, 'animation-3d');
-  assert.equal(model.modelId, FAL_ANIMATION_3D_MODEL);
+  assert.equal(model.modelId, ANIMATION_3D_MODEL);
   const started = await model.doStart(options({
-    prompt: 'A person walks then jumps over a puddle', durationSeconds: 3, seed: 42, format: 'json',
+    prompt: 'A person walks then jumps over a puddle', duration: 3, seed: 42, output_format: 'dict',
   }, { fal: { guidance_scale: 3 } }));
   assert.deepEqual(JSON.parse(wire.calls[0].body), {
     prompt: 'A person walks then jumps over a puddle', duration: 3, seed: 42, output_format: 'dict', guidance_scale: 3,
   });
-  const result = await model.doStatus({ ...operationOptions(FAL_ANIMATION_3D_MODEL), operation: started.operation });
+  const result = await model.doStatus({ ...operationOptions(ANIMATION_3D_MODEL), operation: started.operation });
   assert.deepEqual(result.result.assets, [
-    { type: 'url', url: native.fbx_file.url, mediaType: 'application/octet-stream', role: 'animation', filename: 'walk.fbx', metadata: { format: 'fbx' } },
-    { type: 'url', url: native.motion_json.url, mediaType: 'application/json', role: 'motion-data', metadata: { format: 'json', fileSize: 256 } },
+    { type: 'url', url: native.fbx_file.url, mediaType: 'application/octet-stream', filename: 'walk.fbx' },
+    { type: 'url', url: native.motion_json.url, mediaType: 'application/json', metadata: { fileSize: 256 } },
   ]);
-  assert.deepEqual(result.result.providerMetadata.fal, { seed: 42, requestId: REQUEST_ID, output: native });
+  assert.deepEqual(result.result.providerMetadata.fal, { requestId: REQUEST_ID, output: native });
   assert.equal(wire.calls.length, 3);
 });
 
@@ -126,58 +127,51 @@ test('fal animation accepts either FBX or JSON file output and rejects no-file o
     { fbx_file: null, motion_json: null, seed: 1 },
     { motion_json: { frames: [1, 2, 3] }, seed: 1 },
     { motion_json: { url: 'data:application/json,{}' }, seed: 1 },
-    { fbx_file: { url: 'https://files.example/walk.fbx' }, seed: 0.5 },
   ];
   const wire = scripted(...outputs.flatMap(output => [json({ status: 'COMPLETED' }), json(output)]));
-  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).animation3D();
-  const first = await model.doStatus(operationOptions(FAL_ANIMATION_3D_MODEL));
+  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).animation3D(ANIMATION_3D_MODEL);
+  const first = await model.doStatus(operationOptions(ANIMATION_3D_MODEL));
   assert.equal(first.result.assets[0].mediaType, 'application/x-fbx');
-  const second = await model.doStatus(operationOptions(FAL_ANIMATION_3D_MODEL));
+  const second = await model.doStatus(operationOptions(ANIMATION_3D_MODEL));
   assert.equal(second.result.assets[0].mediaType, 'application/json');
-  for (let i = 0; i < 4; i++) {
-    await assert.rejects(model.doStatus(operationOptions(FAL_ANIMATION_3D_MODEL)), error => APICallError.isInstance(error) && !error.isRetryable);
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(model.doStatus(operationOptions(ANIMATION_3D_MODEL)), error => APICallError.isInstance(error) && !error.isRetryable);
   }
-  assert.equal(wire.calls.length, 12);
+  assert.equal(wire.calls.length, 10);
 });
 
-test('fal new presets validate schema fields and reject cross-model assumptions before a request', async () => {
-  const wire = scripted();
+test('every fal capability accepts an unseen model and arbitrary native JSON without a preset', async () => {
+  const id = 'independent-owner/never-registered-model/v2040';
+  const input = { description: 'x', duration: 900, arbitrary_new_option: { scale: 7 }, output_format: 'new-format' };
+  const wire = scripted(...Array.from({ length: 5 }, () => json(receipt(id))));
   const fal = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch });
-  for (const input of [
-    { prompt: 'short' }, { prompt: 'a'.repeat(2001) }, { prompt: 'Instrumental music', instrumental: 'yes' },
-    { prompt: 'Instrumental music', lyrics: 'x'.repeat(3501) }, { prompt: 'Instrumental music', lyrics: null },
-    { prompt: 'Instrumental music', durationSeconds: 30 }, { prompt: 'A song without any lyrics' },
-    { prompt: 'A song without any lyrics', instrumental: false, lyrics: '  ' },
-  ]) await assert.rejects(fal.music().doStart(options(input)), TypeError);
-  for (const extra of [
-    { lyrics_optimizer: 1 }, { audio_setting: { format: 'flac' } }, { audio_setting: { sample_rate: 48000 } },
-    { audio_setting: { bitrate: 192000 } }, { audio_setting: { sample_rate: '44100' } },
-    { audio_setting: { unsupported: true } }, { is_instrumental: false }, { lyrics: 'override' },
-  ]) await assert.rejects(fal.music().doStart(options({ prompt: 'Instrumental music' }, { fal: extra })), TypeError);
-  for (const input of [
-    { prompt: '' }, { prompt: 'walking', durationSeconds: 0.49 }, { prompt: 'walking', durationSeconds: 12.1 },
-    { prompt: 'walking', durationSeconds: NaN }, { prompt: 'walking', seed: 1.5 },
-    { prompt: 'walking', seed: Infinity }, { prompt: 'walking', format: 'dict' }, { prompt: 'walking', frames: 120 },
-  ]) await assert.rejects(fal.animation3D().doStart(options(input)), TypeError);
-  for (const extra of [{ seed: 4 }, { output_format: 'dict' }, { duration: 3 }, { guidance_scale: Infinity }, { guidance_scale: '3' }]) {
-    await assert.rejects(fal.animation3D().doStart(options({ prompt: 'walking' }, { fal: extra })), TypeError);
+  const methods = [['threeD', 'model-3d'], ['soundEffect', 'sound-effect'], ['music', 'music'], ['animation3D', 'animation-3d']];
+  for (const [method, kind] of methods) {
+    const model = fal[method](id);
+    assert.equal(model.kind, kind);
+    assert.equal(model.modelId, id);
+    await model.doStart(options(input, { fal: { prompt: 'provider-native extra field' } }));
+    for (const missing of [undefined, null, '']) assert.throws(() => fal[method](missing), TypeError);
   }
-  assert.throws(() => fal.music('fal-ai/minimax-music/v1'), /fal\.asset/);
-  assert.throws(() => fal.animation3D('fal-ai/other-motion'), /fal\.asset/);
-  assert.equal(wire.calls.length, 0);
+  await fal.asset(id, { kind: 'future-asset-kind' }).doStart(options(input, { fal: { prompt: 'provider-native extra field' } }));
+  assert.equal(wire.calls.length, 5);
+  for (const call of wire.calls) {
+    assert.equal(call.url, `${BASE}/${id}`);
+    assert.deepEqual(JSON.parse(call.body), { ...input, prompt: 'provider-native extra field' });
+  }
 });
 
-test('fal media presets reject input accessors without invoking caller code', async () => {
+test('fal native capabilities reject input accessors without invoking caller code', async () => {
   let getterCalls = 0;
-  const input = Object.defineProperty({ instrumental: true }, 'prompt', {
+  const input = Object.defineProperty({ is_instrumental: true }, 'prompt', {
     enumerable: true, get() { getterCalls++; return 'An instrumental acoustic piece'; },
   });
   const wire = scripted();
   const fal = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch });
-  await assert.rejects(fal.music().doStart(options(input)), TypeError);
-  await assert.rejects(fal.animation3D().doStart(options(input)), TypeError);
-  await assert.rejects(fal.threeD().doStart(options(input)), TypeError);
-  await assert.rejects(fal.soundEffect().doStart(options(input)), TypeError);
+  await assert.rejects(fal.music(MUSIC_MODEL).doStart(options(input)), TypeError);
+  await assert.rejects(fal.animation3D(ANIMATION_3D_MODEL).doStart(options(input)), TypeError);
+  await assert.rejects(fal.threeD('future-org/mesh/v99').doStart(options(input)), TypeError);
+  await assert.rejects(fal.soundEffect('future-org/sound/v99').doStart(options(input)), TypeError);
   assert.equal(getterCalls, 0);
   assert.equal(wire.calls.length, 0);
 });
@@ -205,18 +199,19 @@ test('fal output metadata snapshots the native body before custom mappings can m
   assert.equal(status.result.providerMetadata.fal.custom, true);
 });
 
-test('fal rejects missing mapping functions at construction and snapshots valid definitions', async () => {
+test('fal permits omitted mapping functions, validates supplied functions and snapshots definitions', async () => {
   const id = 'my-org/document';
   const native = { url: 'https://files.example/report.pdf' };
   const wire = scripted(json(receipt(id)), json({ status: 'COMPLETED' }), json(native));
   const fal = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch });
   for (const definition of [
-    { kind: 'document', mapInput: input => input },
-    { kind: 'document', mapResult: () => ({ assets: [] }) },
     { kind: 'document', mapInput: 'not a function', mapResult: () => ({ assets: [] }) },
     { kind: 'document', mapInput: input => input, mapResult: null },
-  ]) assert.throws(() => fal.asset(id, definition), /mapInput and mapResult functions/);
+  ]) assert.throws(() => fal.asset(id, definition), /map(Input|Result) must be a function/);
   assert.equal(wire.calls.length, 0);
+  assert.doesNotThrow(() => fal.asset(id, { kind: 'document' }));
+  assert.doesNotThrow(() => fal.asset(id, { kind: 'document', mapInput: input => input }));
+  assert.doesNotThrow(() => fal.asset(id, { kind: 'document', mapResult: () => ({ assets: [] }) }));
 
   const definition = {
     kind: 'document', mapInput: input => ({ prompt: input.prompt }),
@@ -235,16 +230,53 @@ test('fal rejects missing mapping functions at construction and snapshots valid 
 
 test('fal direct status and cancel reject operation getters without invoking them or sending credentials', async () => {
   let getterCalls = 0;
-  const handle = Object.defineProperty(operation(FAL_MUSIC_MODEL), 'requestId', {
+  const handle = Object.defineProperty(operation(MUSIC_MODEL), 'requestId', {
     enumerable: true, get() { getterCalls++; return REQUEST_ID; },
   });
   const wire = scripted();
-  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).music();
-  const input = { ...operationOptions(FAL_MUSIC_MODEL), operation: handle };
+  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).music(MUSIC_MODEL);
+  const input = { ...operationOptions(MUSIC_MODEL), operation: handle };
   await assert.rejects(model.doStatus(input), TypeError);
   await assert.rejects(model.doCancel(input), TypeError);
   assert.equal(getterCalls, 0);
   assert.equal(wire.calls.length, 0);
+});
+
+test('fal accepts class mapping services and snapshots prototype methods with their original receiver', async () => {
+  const id = 'external-team/independent-model';
+  const native = { generated: 'https://files.example/external.asset' };
+  for (const entry of ['music', 'threeD', 'soundEffect', 'animation3D', 'asset', 'constructor']) {
+    class ExternalMapping {
+      kind = 'external-asset';
+      #prefix = 'External: ';
+      #mediaType = 'application/x-external';
+      async mapInput(input) {
+        await Promise.resolve();
+        return { description: this.#prefix + input.title };
+      }
+      async mapResult(output) {
+        await Promise.resolve();
+        return { assets: [{ type: 'url', url: output.generated, mediaType: this.#mediaType }] };
+      }
+    }
+    const wire = scripted(json(receipt(id)), json({ status: 'COMPLETED' }), json(native));
+    const settings = { apiKey: 'test:key', fetch: wire.fetch };
+    const provider = createFalAssetProvider(settings);
+    const mapping = new ExternalMapping();
+    const model = entry === 'constructor'
+      ? new FalAssetModel(id, settings, mapping)
+      : provider[entry](id, mapping);
+    const initialKind = model.kind;
+    mapping.kind = 'changed-kind';
+    mapping.mapInput = () => { throw new Error('Instance method was replaced'); };
+    ExternalMapping.prototype.mapResult = () => { throw new Error('Prototype method was replaced'); };
+    const started = await model.doStart(options({ title: 'A custom asset' }));
+    const status = await model.doStatus({ ...operationOptions(id), operation: started.operation });
+    assert.equal(model.kind, initialKind);
+    assert.deepEqual(JSON.parse(wire.calls[0].body), { description: 'External: A custom asset' });
+    assert.deepEqual(status.result.assets, [{ type: 'url', url: native.generated, mediaType: 'application/x-external' }]);
+    assert.equal(wire.calls.length, 3);
+  }
 });
 
 test('fal custom mappings cannot present empty assets as successful asset generation', async () => {
@@ -258,11 +290,29 @@ test('fal custom mappings cannot present empty assets as successful asset genera
 
 test('fal motion uses the same cancellation path and keeps local abort separate from remote cancellation', async () => {
   const wire = scripted(json({ status: 'CANCELLATION_REQUESTED' }, 202));
-  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).animation3D();
-  assert.equal((await model.doCancel(operationOptions(FAL_ANIMATION_3D_MODEL))).status, 'requested');
+  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).animation3D(ANIMATION_3D_MODEL);
+  assert.equal((await model.doCancel(operationOptions(ANIMATION_3D_MODEL))).status, 'requested');
   assert.equal(wire.calls[0].method, 'PUT');
-  assert.equal(wire.calls[0].url, receipt(FAL_ANIMATION_3D_MODEL).cancel_url);
+  assert.equal(wire.calls[0].url, receipt(ANIMATION_3D_MODEL).cancel_url);
   const reason = new Error('Stop waiting for this request');
-  await assert.rejects(model.doStatus({ ...operationOptions(FAL_ANIMATION_3D_MODEL), abortSignal: AbortSignal.abort(reason) }), error => error === reason);
+  await assert.rejects(model.doStatus({ ...operationOptions(ANIMATION_3D_MODEL), abortSignal: AbortSignal.abort(reason) }), error => error === reason);
   assert.equal(wire.calls.length, 1);
+});
+
+test('fal capability mapping can independently replace input or result handling for any model', async () => {
+  const id = 'independent-owner/experimental-synthesis';
+  const wire = scripted(json(receipt(id)), json({ status: 'COMPLETED' }), json({ audio_blob: 'AQI=', codec: 'custom' }));
+  const fal = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch });
+  const model = fal.music(id, {
+    mapInput: input => ({ description: input.prompt, generator: input.version }),
+    mapResult: output => ({
+      assets: [{ type: 'base64', data: output.audio_blob, mediaType: 'audio/x-custom' }],
+    }),
+  });
+  const started = await startAsset({ model, input: { prompt: 'An ambient score', version: 17 } });
+  const status = await getAssetStatus({ model, operation: started.operation });
+  assert.deepEqual(JSON.parse(wire.calls[0].body), { description: 'An ambient score', generator: 17 });
+  assert.equal(status.result.assets[0].type, 'base64');
+  assert.deepEqual(status.result.providerMetadata.fal.output, { audio_blob: 'AQI=', codec: 'custom' });
+  assert.equal(wire.calls.length, 3);
 });

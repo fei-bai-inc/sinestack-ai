@@ -26,20 +26,22 @@ export async function generateGameAssets(options: GenerateGameAssetsOptions = {}
   const [threeD, soundEffect] = await Promise.all([
     generate3D({
       ...shared,
-      model: fal.threeD(),
-      prompt: 'A low-poly wooden treasure chest with iron bands, ready for a game scene',
-      providerOptions: { fal: { face_count: 100_000, enable_pbr: true } },
+      // This example selects a model explicitly. The SDK has no built-in model list.
+      model: fal.threeD('fal-ai/hunyuan3d-v3/text-to-3d'),
+      input: {
+        prompt: 'A low-poly wooden treasure chest with iron bands, ready for a game scene',
+        face_count: 100_000, enable_pbr: true,
+      },
       timeoutMs: 20 * 60_000,
       poll: { intervalMs: 2_000, timeoutMs: 20 * 60_000 },
     }),
     generateSoundEffect({
       ...shared,
-      model: fal.soundEffect(),
-      prompt: 'A heavy wooden treasure chest creaks open, followed by a soft metallic latch click',
-      durationSeconds: 3,
-      promptInfluence: 0.6,
-      loop: false,
-      providerOptions: { fal: { output_format: 'mp3_44100_128' } },
+      model: fal.soundEffect('fal-ai/elevenlabs/sound-effects/v2'),
+      input: {
+        text: 'A heavy wooden treasure chest creaks open, followed by a soft metallic latch click',
+        duration_seconds: 3, prompt_influence: 0.6, loop: false, output_format: 'mp3_44100_128',
+      },
       timeoutMs: 2 * 60_000,
       poll: { intervalMs: 1_000, timeoutMs: 2 * 60_000 },
     }),
