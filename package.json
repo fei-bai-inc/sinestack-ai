@@ -1,0 +1,20 @@
+{
+  "name": "sine-ai-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tests/tsconfig.json --noEmit",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "check": "npm run typecheck && npm test",
+    "check:upstream": "node scripts/check-upstream.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "ai": "7.0.155",
+    "typescript": "6.0.3"
+  }
+}

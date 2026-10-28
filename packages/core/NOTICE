@@ -1,0 +1,22 @@
+Sine AI core
+Copyright 2026 Sine AI contributors.
+
+This package includes asset-specific logic adapted from Vercel AI SDK:
+Copyright 2023 Vercel, Inc.
+https://github.com/vercel/ai
+Licensed under the Apache License, Version 2.0.
+
+Upstream baseline: ai 7.0.155 video generation, submission, and status
+APIs. prepareRetries, mergeAbortSignals, and mergeCallbacks are imported
+directly from ai/internal through one version-pinned integration module.
+Public @ai-sdk/provider-utils 5.0.70 helpers are used as dependencies.
+
+Modified to support typed asset kinds, provider-bound operation handles,
+explicit submission idempotency, remote cancellation, and URL-preserving
+results. Callbacks are awaited observations whose errors are ignored;
+cancellation uses cooperative signals. Asset submit/status/poll/result
+orchestration is still maintained by Sine AI.
+
+See upstream.json and docs/UPSTREAM.md in the Sine AI source repository
+for reviewed source files, SHA-256 hashes, and upgrade policy.
+https://github.com/fei-bai-inc/sine-ai
