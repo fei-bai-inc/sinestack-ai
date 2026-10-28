@@ -39,6 +39,7 @@ export interface AssetModelV1Result {
   readonly assets: ReadonlyArray<AssetFile>;
   readonly warnings?: ReadonlyArray<SharedV4Warning>;
   readonly usage?: JSONObject;
+  /** Built-in adapters retain native output at providerMetadata.<provider>.output. */
   readonly providerMetadata?: SharedV4ProviderMetadata;
   readonly response?: AssetResponse;
 }
@@ -118,4 +119,17 @@ export interface SoundEffectInput {
   readonly durationSeconds?: number;
   readonly promptInfluence?: number;
   readonly loop?: boolean;
+}
+
+export interface MusicInput {
+  readonly prompt: string;
+  readonly lyrics?: string;
+  readonly instrumental?: boolean;
+}
+
+export interface Animation3DInput {
+  readonly prompt: string;
+  readonly durationSeconds?: number;
+  readonly seed?: number;
+  readonly format?: 'fbx' | 'json';
 }

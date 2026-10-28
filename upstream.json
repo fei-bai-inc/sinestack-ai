@@ -64,7 +64,7 @@
       "consumers": [
         "@sine-ai/provider",
         "@sine-ai/core",
-        "@sine-ai/fal"
+        "@sine-ai/provider-utils"
       ],
       "files": [
         {
@@ -86,6 +86,11 @@
           "path": "src/video-model/v4/video-model-v4-operation-webhook.ts",
           "sha256": "c4f3574eac74585490b40ceb2ee4f1b48ecc20032566ae5128d19550c55a574a",
           "role": "webhook notification envelope reference"
+        },
+        {
+          "path": "src/errors/api-call-error.ts",
+          "sha256": "c5797b3db888abff0c9ef1778875dcc2cbca7ffaf6e2ac42d75ce54fb69d387b",
+          "role": "official HTTP retry classification for shared adapter transport"
         }
       ]
     },
@@ -95,7 +100,7 @@
       "license": "Apache-2.0",
       "consumers": [
         "@sine-ai/core",
-        "@sine-ai/fal"
+        "@sine-ai/provider-utils"
       ],
       "files": [
         {
@@ -107,6 +112,26 @@
           "path": "src/delay.ts",
           "sha256": "e26c1518420b27c6dc6e824cf3047a1b5021c907f6997de0bac4af743b70a207",
           "role": "abort-aware timer delay reference"
+        },
+        {
+          "path": "src/get-from-api.ts",
+          "sha256": "25138b030b25a655af26b773a42075f770992fab59c669251d3e7a04e7e74826",
+          "role": "public HTTP GET helper used by asset adapters"
+        },
+        {
+          "path": "src/post-to-api.ts",
+          "sha256": "6495b62e6cf430dcb08221cc2473ba9311d32080e2d1bab0a5c781e3d2180346",
+          "role": "public JSON POST helper used by asset adapters"
+        },
+        {
+          "path": "src/response-handler.ts",
+          "sha256": "867e9c7790efffc986f4ae583027316ca9dea8d7fdb11d539357a0cf5b306ea7",
+          "role": "public JSON success and error response handlers"
+        },
+        {
+          "path": "src/handle-fetch-error.ts",
+          "sha256": "961f448e9ef31720f4a57c591db3caf7363227784d879b48072624cff79b5f6f",
+          "role": "network-error handling reached through SDK GET/POST helpers; not directly imported"
         }
       ]
     }

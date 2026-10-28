@@ -2,6 +2,8 @@ import {
   generateAsset,
   generate3D,
   generateSoundEffect,
+  generateMusic,
+  generateAnimation3D,
   getAssetStatus,
   materializeAsset,
   startAsset,
@@ -19,6 +21,8 @@ import type {
   AssetOperation,
   SoundEffectInput,
   ThreeDInput,
+  MusicInput,
+  Animation3DInput,
 } from '@sine-ai/provider';
 import type { GeneratedFile } from 'ai';
 // @ts-expect-error Observation hook failures no longer have a custom exported error class.
@@ -28,6 +32,20 @@ declare function expectType<T>(value: T): void;
 
 declare const threeD: AssetModelV1<ThreeDInput, 'model-3d'>;
 declare const soundEffect: AssetModelV1<SoundEffectInput, 'sound-effect'>;
+declare const music: AssetModelV1<MusicInput, 'music'>;
+declare const motion: AssetModelV1<Animation3DInput, 'animation-3d'>;
+
+expectType<Promise<GenerateAssetResult<'music'>>>(generateMusic({ model: music, prompt: 'Piano score', instrumental: true }));
+expectType<Promise<GenerateAssetResult<'animation-3d'>>>(generateAnimation3D({ model: motion, prompt: 'Walk', durationSeconds: 3, seed: 42, format: 'json' }));
+// @ts-expect-error Music and motion models are not interchangeable.
+generateMusic({ model: motion, prompt: 'Piano score' });
+// @ts-expect-error A motion model needs an animation-3d kind.
+generateAnimation3D({ model: music, prompt: 'Walk' });
+// @ts-expect-error The shared motion input uses json, which adapters map to native formats.
+generateAnimation3D({ model: motion, prompt: 'Walk', format: 'dict' });
+declare const customMusic: AssetModelV1<MusicInput & { voice: string }, 'music'>;
+// @ts-expect-error A facade cannot erase additional required fields of a custom model.
+generateMusic({ model: customMusic, prompt: 'Piano score' });
 
 expectType<Promise<GenerateAssetResult<'model-3d'>>>(generate3D({ model: threeD, prompt: 'A wooden chair' }));
 expectType<Promise<GenerateAssetResult<'sound-effect'>>>(generateSoundEffect({

@@ -28,7 +28,12 @@ core 精确依赖 `ai@7.0.155` 的这三个内部导出。其他源码通过这�
 |---|---|
 | `@sine-ai/provider` | `AssetModelV1`、资产文件、operation/status，以及能力特定输入。 |
 | `@sine-ai/core` | 协议校验、必要的资产编排、类型化 facade 和显式物化。 |
+| `@sine-ai/provider-utils` | 共享 JSON/连接校验与单次 HTTP；调用公开 AI SDK 请求和响应 helpers。 |
 | `@sine-ai/fal` | 共享 fal queue 协议与模型输入/结果映射，不增加自己的 polling/retry。 |
+| `@sine-ai/wavespeed` | WaveSpeed prediction 协议及音乐/3D 映射。 |
+| `@sine-ai/replicate` | Replicate prediction 协议、固定版本与音乐/3D 映射。 |
+
+三个远端 adapter 共用 provider-utils 的 transport。这个工具层只验证目的地、构造认证 header 并发起一次请求；它没有循环、重试策略、生命周期或 AbortController。GET/POST、JSON 响应解析与 HTTP 错误分类直接使用 AI SDK 公开实现。fal 取消所需的 PUT 没有对应的 SDK 公开请求 helper，因此只保留一次 fetch，并使用相同的 SDK response handlers。
 
 `AssetModelV1<INPUT, KIND>` 标识版本、provider、modelId、kind，并提供以下单次操作：
 
@@ -43,11 +48,13 @@ core 精确依赖 `ai@7.0.155` 的这三个内部导出。其他源码通过这�
 
 ## 公开入口与不变量
 
-`generateAsset` 选择直接生成或 submit + wait；`startAsset` 只提交；`getAssetStatus` 只查询；`waitForAsset` 等待已有任务；`cancelAsset` 显式请求远端取消。`generate3D` / `generateSoundEffect` 只约束输入与 kind，进入 `generateAsset`。
+`generateAsset` 选择直接生成或 submit + wait；`startAsset` 只提交；`getAssetStatus` 只查询；`waitForAsset` 等待已有任务；`cancelAsset` 显式请求远端取消。`generate3D` / `generateSoundEffect` / `generateMusic` / `generateAnimation3D` 只约束输入与 kind，进入 `generateAsset`。
 
 获得 operation 后，status 请求失败、webhook 异常或等待取消都不会进入提交路径。远端 failed/cancelled 是任务状态，不是重新提交的理由。类型化 facade 和 provider adapter 不复制这些循环。
 
 operation envelope 绑定版本、provider、modelId、kind 与 provider 自有的 JSON payload。提交和恢复入口都建立冻结的数据快照；恢复在 `onStart` 前完成校验和绑定。之后查询、等待和取消仍使用原连接身份，已有 handle 可随错误提供给调用者。
+
+Provider operation 还校验原连接的 API 地址及远端任务标识。它不包含 API key，也不能代替应用自己的 tenant/connection 授权。原生结果以 `providerMetadata.<provider>.output` 和统一的非空 `assets` 并存，不扩展出第二套结果或执行契约。模型列表、字段映射与各 provider 边界见 [MEDIA_PROVIDERS.md](MEDIA_PROVIDERS.md)。
 
 关键持久化放在公开调用返回之后：`const started = await startAsset(...)`，然后 `await saveOperation(started.operation)`。如果保存失败，继续使用这个 handle 补写或恢复。`onOperation` 是观测事件，其失败不会使提交失败。
 

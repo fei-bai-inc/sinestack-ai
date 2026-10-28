@@ -1,0 +1,14 @@
+Sine AI provider utilities
+Copyright 2026 Sine AI contributors.
+Licensed under the Apache License, Version 2.0.
+
+This package delegates HTTP requests and JSON response/error handling to
+@ai-sdk/provider-utils and uses @ai-sdk/provider error types.
+Copyright 2023 Vercel, Inc.
+https://github.com/vercel/ai
+Licensed under the Apache License, Version 2.0.
+
+No retry, polling, lifecycle, or cancellation engine is implemented here.
+The dependencies retain their own copyright and license notices.
+
+https://github.com/fei-bai-inc/sine-ai

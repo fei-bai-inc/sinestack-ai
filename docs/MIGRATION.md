@@ -38,3 +38,17 @@ await saveOperation(started.operation);
 stage retry 次数、提交幂等能力检查、每次逻辑提交的稳定幂等键、JSON operation 校验与身份绑定、查询失败不重提、URL 默认不下载和显式远端取消保持不变。自定义能力继续使用 `AssetModelV1`，无需为每种资产另写 polling/retry。
 
 接入更新后运行 `npm run check` 和 `npm run check:upstream`；其他版本的 AI SDK 需要先经过集中 internal 接口和基线审阅。
+
+## Media provider 扩展后的变化
+
+新增 `@sine-ai/wavespeed`、`@sine-ai/replicate`，以及 fal 的音乐/动作预设；公共执行接口与 `AssetModelV1` 版本保持不变。新增 `generateMusic` 与 `generateAnimation3D` 只包装 `generateAsset`。模型、连接和映射约定见 [MEDIA_PROVIDERS.md](MEDIA_PROVIDERS.md)。
+
+fal HTTP 已转向共享 `@sine-ai/provider-utils`，与新 provider 一起复用 AI SDK 的公开 HTTP helpers。由此产生以下明确变化：
+
+- HTTP 409 按 SDK 的默认分类可重试。是否重试仍由 core 的阶段 retry 次数决定，提交默认依然为 0。
+- 未被 SDK 识别的自定义 fetch 异常保留原样，不再全部包装成可重试网络错误。SDK 识别的连接错误继续使用 SDK 的分类。
+- fal PUT 取消使用一次 fetch 加 SDK response handlers；网络异常原样保留，默认 cancel retry 为 0。
+- 自定义 fal mapper 必须在构造模型时提供两个映射函数，完成结果必须含至少一个资产。
+- 所有 adapter 完成结果新增 `providerMetadata.<provider>.output`，保留原生输出快照；该字段和真实任务 ID 由 adapter 保留，不接受自定义 mapper 覆盖。对整个 metadata 做精确快照比较的调用方需要更新预期。
+
+此前已持久化的 fal queue operation 结构没有变化，仍可用原连接恢复。新增 provider 的 operation 不可相互替换，也不可在不同 baseURL 下恢复。

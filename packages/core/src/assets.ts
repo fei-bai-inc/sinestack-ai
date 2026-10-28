@@ -4,7 +4,7 @@
  * Modified: arbitrary asset kinds and typed inputs share one executor.
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { AssetModelV1, AssetModelV1CancelResult, AssetOperation, SoundEffectInput, ThreeDInput } from '@sine-ai/provider';
+import type { Animation3DInput, AssetModelV1, AssetModelV1CancelResult, AssetOperation, MusicInput, SoundEffectInput, ThreeDInput } from '@sine-ai/provider';
 import { AssetExecutionError } from './errors.js';
 import { attempt, completed, execute, observeWebhook, query, submissionHeaders, submit, wait } from './internal/executor.js';
 import { httpURL, milliseconds } from './internal/validation.js';
@@ -110,6 +110,20 @@ export function generateSoundEffect(options: DomainOptions<SoundEffectInput, 'so
   if (options.model.kind !== 'sound-effect') return Promise.reject(new TypeError('generateSoundEffect requires a sound-effect asset model'));
   const { prompt, durationSeconds, promptInfluence, loop, ...rest } = options;
   return generateAsset({ ...rest, input: { prompt, durationSeconds, promptInfluence, loop } });
+}
+
+/** A typed convenience facade only; all execution is delegated to generateAsset. */
+export function generateMusic(options: DomainOptions<MusicInput, 'music'>): Promise<GenerateAssetResult<'music'>> {
+  if (options.model.kind !== 'music') return Promise.reject(new TypeError('generateMusic requires a music asset model'));
+  const { prompt, lyrics, instrumental, ...rest } = options;
+  return generateAsset({ ...rest, input: { prompt, lyrics, instrumental } });
+}
+
+/** A typed convenience facade only; all execution is delegated to generateAsset. */
+export function generateAnimation3D(options: DomainOptions<Animation3DInput, 'animation-3d'>): Promise<GenerateAssetResult<'animation-3d'>> {
+  if (options.model.kind !== 'animation-3d') return Promise.reject(new TypeError('generateAnimation3D requires an animation-3d asset model'));
+  const { prompt, durationSeconds, seed, format, ...rest } = options;
+  return generateAsset({ ...rest, input: { prompt, durationSeconds, seed, format } });
 }
 
 export type { DomainOptions };

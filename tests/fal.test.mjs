@@ -133,7 +133,7 @@ test('fal completion reads the returned result URL and maps GLB, alternate forma
   });
   assert.equal(status.result.assets[1].mediaType, 'model/obj');
   assert.equal(status.result.assets[2].role, 'thumbnail');
-  assert.deepEqual(status.result.providerMetadata.fal, { seed: 42, requestId: REQUEST_ID });
+  assert.deepEqual(status.result.providerMetadata.fal, { seed: 42, requestId: REQUEST_ID, output });
   assert.deepEqual(status.result.response.body, output);
 });
 
@@ -298,14 +298,22 @@ test('fal does not hide a non-2xx result download behind a failed or completed s
   assert.equal(wire.calls.length, 2);
 });
 
-test('network failures are retryable APICallErrors and caller abort reasons retain their identity', async () => {
-  const wire = scripted(() => { throw new TypeError('Network down'); });
+test('SDK-recognized network failures are retryable and caller abort reasons retain their identity', async () => {
+  const wire = scripted(() => { throw new TypeError('fetch failed', { cause: new Error('Network down') }); });
   const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).threeD();
   await assert.rejects(model.doStatus(operationOptions()), error => APICallError.isInstance(error) && error.isRetryable && error.cause.message === 'Network down');
   const controller = new AbortController();
   const reason = new Error('Stop requested');
   controller.abort(reason);
   await assert.rejects(model.doStatus(operationOptions(undefined, { abortSignal: controller.signal })), error => error === reason);
+  assert.equal(wire.calls.length, 1);
+});
+
+test('fal leaves custom fetch programming errors unchanged instead of declaring every exception retryable', async () => {
+  const failure = new TypeError('Invalid custom fetch configuration');
+  const wire = scripted(() => { throw failure; });
+  const model = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch }).threeD();
+  await assert.rejects(model.doStatus(operationOptions()), error => error === failure);
   assert.equal(wire.calls.length, 1);
 });
 
