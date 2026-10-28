@@ -4,7 +4,7 @@
  * Modified: arbitrary asset kinds and typed inputs share one executor.
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { AssetModelV1, AssetModelV1CancelResult, AssetOperation, SoundEffectInput, ThreeDInput } from '@sine-ai/provider';
+import type { Animation3DInput, AssetModelV1, AssetModelV1CancelResult, AssetOperation, MusicInput, SoundEffectInput, ThreeDInput } from '@sine-ai/provider';
 import { AssetExecutionError } from './errors.js';
 import { attempt, completed, execute, observeWebhook, query, submissionHeaders, submit, wait } from './internal/executor.js';
 import { httpURL, milliseconds } from './internal/validation.js';
@@ -98,18 +98,48 @@ export function cancelAsset<INPUT, KIND extends string>(options: AssetOperationO
 
 type DomainOptions<INPUT, KIND extends string> = Omit<GenerateAssetOptions<INPUT, KIND>, 'input'> & INPUT;
 
-/** A typed convenience facade only; all execution is delegated to generateAsset. */
-export function generate3D(options: DomainOptions<ThreeDInput, 'model-3d'>): Promise<GenerateAssetResult<'model-3d'>> {
+/** A kind-only facade. Native input is passed intact to generateAsset. */
+export function generate3D<INPUT>(options: GenerateAssetOptions<INPUT, 'model-3d'>): Promise<GenerateAssetResult<'model-3d'>>;
+/** @deprecated Use { model, input }. Flattened fields are for explicitly mapped models only. */
+export function generate3D(options: DomainOptions<ThreeDInput, 'model-3d'>): Promise<GenerateAssetResult<'model-3d'>>;
+export function generate3D<INPUT>(options: GenerateAssetOptions<INPUT, 'model-3d'> | DomainOptions<ThreeDInput, 'model-3d'>): Promise<GenerateAssetResult<'model-3d'>> {
   if (options.model.kind !== 'model-3d') return Promise.reject(new TypeError('generate3D requires a model-3d asset model'));
+  if ('input' in options) return generateAsset(options);
   const { prompt, ...rest } = options;
   return generateAsset({ ...rest, input: { prompt } });
 }
 
-/** A typed convenience facade only; all execution is delegated to generateAsset. */
-export function generateSoundEffect(options: DomainOptions<SoundEffectInput, 'sound-effect'>): Promise<GenerateAssetResult<'sound-effect'>> {
+/** A kind-only facade. Native input is passed intact to generateAsset. */
+export function generateSoundEffect<INPUT>(options: GenerateAssetOptions<INPUT, 'sound-effect'>): Promise<GenerateAssetResult<'sound-effect'>>;
+/** @deprecated Use { model, input }. Flattened fields are for explicitly mapped models only. */
+export function generateSoundEffect(options: DomainOptions<SoundEffectInput, 'sound-effect'>): Promise<GenerateAssetResult<'sound-effect'>>;
+export function generateSoundEffect<INPUT>(options: GenerateAssetOptions<INPUT, 'sound-effect'> | DomainOptions<SoundEffectInput, 'sound-effect'>): Promise<GenerateAssetResult<'sound-effect'>> {
   if (options.model.kind !== 'sound-effect') return Promise.reject(new TypeError('generateSoundEffect requires a sound-effect asset model'));
+  if ('input' in options) return generateAsset(options);
   const { prompt, durationSeconds, promptInfluence, loop, ...rest } = options;
   return generateAsset({ ...rest, input: { prompt, durationSeconds, promptInfluence, loop } });
+}
+
+/** A kind-only facade. Native input is passed intact to generateAsset. */
+export function generateMusic<INPUT>(options: GenerateAssetOptions<INPUT, 'music'>): Promise<GenerateAssetResult<'music'>>;
+/** @deprecated Use { model, input }. Flattened fields are for explicitly mapped models only. */
+export function generateMusic(options: DomainOptions<MusicInput, 'music'>): Promise<GenerateAssetResult<'music'>>;
+export function generateMusic<INPUT>(options: GenerateAssetOptions<INPUT, 'music'> | DomainOptions<MusicInput, 'music'>): Promise<GenerateAssetResult<'music'>> {
+  if (options.model.kind !== 'music') return Promise.reject(new TypeError('generateMusic requires a music asset model'));
+  if ('input' in options) return generateAsset(options);
+  const { prompt, lyrics, instrumental, ...rest } = options;
+  return generateAsset({ ...rest, input: { prompt, lyrics, instrumental } });
+}
+
+/** A kind-only facade. Native input is passed intact to generateAsset. */
+export function generateAnimation3D<INPUT>(options: GenerateAssetOptions<INPUT, 'animation-3d'>): Promise<GenerateAssetResult<'animation-3d'>>;
+/** @deprecated Use { model, input }. Flattened fields are for explicitly mapped models only. */
+export function generateAnimation3D(options: DomainOptions<Animation3DInput, 'animation-3d'>): Promise<GenerateAssetResult<'animation-3d'>>;
+export function generateAnimation3D<INPUT>(options: GenerateAssetOptions<INPUT, 'animation-3d'> | DomainOptions<Animation3DInput, 'animation-3d'>): Promise<GenerateAssetResult<'animation-3d'>> {
+  if (options.model.kind !== 'animation-3d') return Promise.reject(new TypeError('generateAnimation3D requires an animation-3d asset model'));
+  if ('input' in options) return generateAsset(options);
+  const { prompt, durationSeconds, seed, format, ...rest } = options;
+  return generateAsset({ ...rest, input: { prompt, durationSeconds, seed, format } });
 }
 
 export type { DomainOptions };

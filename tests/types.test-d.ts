@@ -2,6 +2,8 @@ import {
   generateAsset,
   generate3D,
   generateSoundEffect,
+  generateMusic,
+  generateAnimation3D,
   getAssetStatus,
   materializeAsset,
   startAsset,
@@ -19,15 +21,65 @@ import type {
   AssetOperation,
   SoundEffectInput,
   ThreeDInput,
+  MusicInput,
+  Animation3DInput,
+  JSONObject,
 } from '@sine-ai/provider';
+import { createFalAssetProvider } from '@sine-ai/fal';
+import { createWaveSpeedAssetProvider } from '@sine-ai/wavespeed';
+import { createReplicateAssetProvider } from '@sine-ai/replicate';
 import type { GeneratedFile } from 'ai';
 // @ts-expect-error Observation hook failures no longer have a custom exported error class.
 import type { AssetHookError } from '@sine-ai/core';
 
 declare function expectType<T>(value: T): void;
 
+const fal = createFalAssetProvider();
+const wavespeed = createWaveSpeedAssetProvider();
+const replicate = createReplicateAssetProvider();
+const nativeMusic = fal.music('unregistered/new-music-model');
+expectType<AssetModelV1<JSONObject, 'music'>>(nativeMusic);
+expectType<Promise<GenerateAssetResult<'music'>>>(generateMusic({
+  model: nativeMusic,
+  input: { description: 'Native fields', is_instrumental: true, vendor_extension: { setting: 42 } },
+}));
+generate3D({ model: wavespeed.threeD('unregistered/new/geometry-model'), input: { text: 'Mesh', native_format: 'obj' } });
+generateAnimation3D({ model: replicate.animation3D('owner/new-motion-model'), input: { caption: 'Walk', frames: 120 } });
+generateSoundEffect({ model: fal.soundEffect('owner/new-sound-model'), input: { description: 'Bell', new_option: false } });
+generateAsset({ model: fal.asset('owner/document-model', { kind: 'document' }), input: { template: 'invoice' } });
+// @ts-expect-error Native models require native input, not the old flat normalized convention.
+generateMusic({ model: nativeMusic, prompt: 'No implicit model-specific mapping' });
+// @ts-expect-error Provider model selection is explicit; there is no default model.
+fal.music();
+// @ts-expect-error Kind safety remains enforced by native facades.
+generate3D({ model: nativeMusic, input: { prompt: 'Wrong kind' } });
+
+interface ExternalMusicInput { description: string; seconds: number }
+const mappedMusic = replicate.music<ExternalMusicInput>('owner/external-music-model', {
+  mapInput: input => ({ text: input.description, duration: input.seconds }),
+});
+generateMusic({ model: mappedMusic, input: { description: 'Guitar', seconds: 90 } });
+// @ts-expect-error Native facade inference must not erase required custom input fields.
+generateMusic({ model: mappedMusic, input: { description: 'Missing duration' } });
+// @ts-expect-error The public native input still checks custom field types.
+generateMusic({ model: mappedMusic, input: { description: 'Wrong duration', seconds: 'long' } });
+
 declare const threeD: AssetModelV1<ThreeDInput, 'model-3d'>;
 declare const soundEffect: AssetModelV1<SoundEffectInput, 'sound-effect'>;
+declare const music: AssetModelV1<MusicInput, 'music'>;
+declare const motion: AssetModelV1<Animation3DInput, 'animation-3d'>;
+
+expectType<Promise<GenerateAssetResult<'music'>>>(generateMusic({ model: music, prompt: 'Piano score', instrumental: true }));
+expectType<Promise<GenerateAssetResult<'animation-3d'>>>(generateAnimation3D({ model: motion, prompt: 'Walk', durationSeconds: 3, seed: 42, format: 'json' }));
+// @ts-expect-error Music and motion models are not interchangeable.
+generateMusic({ model: motion, prompt: 'Piano score' });
+// @ts-expect-error A motion model needs an animation-3d kind.
+generateAnimation3D({ model: music, prompt: 'Walk' });
+// @ts-expect-error The shared motion input uses json, which adapters map to native formats.
+generateAnimation3D({ model: motion, prompt: 'Walk', format: 'dict' });
+declare const customMusic: AssetModelV1<MusicInput & { voice: string }, 'music'>;
+// @ts-expect-error A facade cannot erase additional required fields of a custom model.
+generateMusic({ model: customMusic, prompt: 'Piano score' });
 
 expectType<Promise<GenerateAssetResult<'model-3d'>>>(generate3D({ model: threeD, prompt: 'A wooden chair' }));
 expectType<Promise<GenerateAssetResult<'sound-effect'>>>(generateSoundEffect({

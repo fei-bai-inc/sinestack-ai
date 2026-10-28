@@ -1,17 +1,19 @@
-import { APICallError } from '@ai-sdk/provider';
-import { loadApiKey } from '@ai-sdk/provider-utils';
+import {
+  AssetProviderTransport, errorMessage, httpURL, invalidResponse, jsonObject, jsonValue, mapAssetResult, record, snapshotAssetMapping,
+} from '@sine-ai/provider-utils';
+import type { AssetProviderResponse } from '@sine-ai/provider-utils';
 import type {
   AssetModelV1,
+  AssetModelMapping,
   AssetModelV1CallOptions,
   AssetModelV1CancelResult,
   AssetModelV1OperationOptions,
-  AssetModelV1Result,
   AssetModelV1StartResult,
   AssetModelV1Status,
-  AssetResponse,
   JSONObject,
-  JSONValue,
 } from '@sine-ai/provider';
+
+export { record } from '@sine-ai/provider-utils';
 
 export interface FalAssetProviderSettings {
   readonly apiKey?: string;
@@ -22,12 +24,8 @@ export interface FalAssetProviderSettings {
   readonly name?: string;
 }
 
-export interface FalAssetDefinition<INPUT, KIND extends string> {
+export interface FalAssetDefinition<INPUT = JSONObject, KIND extends string = string> extends AssetModelMapping<INPUT> {
   readonly kind: KIND;
-  /** Produce the model's JSON request. Mapped keys cannot be overridden by providerOptions.fal. */
-  readonly mapInput: (input: INPUT) => JSONObject | PromiseLike<JSONObject>;
-  /** Map the raw REST result, not the { data } wrapper returned by the fal JavaScript SDK. */
-  readonly mapResult: (result: unknown) => AssetModelV1Result | PromiseLike<AssetModelV1Result>;
 }
 
 interface QueueOperation extends JSONObject {
@@ -40,111 +38,6 @@ interface QueueOperation extends JSONObject {
   cancelUrl: string;
 }
 
-interface FalResponse {
-  url: string;
-  statusCode: number;
-  value: unknown;
-  rawBody: string;
-  response: AssetResponse & { headers: Record<string, string> };
-}
-
-const CORE_INPUT_KEYS = new Set([
-  'prompt', 'text', 'duration', 'duration_seconds', 'durationSeconds',
-  'prompt_influence', 'promptInfluence', 'loop',
-]);
-
-export function record(value: unknown, label: string): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`${label} must be an object.`);
-  }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new TypeError(`${label} must be a plain object.`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function jsonObject(value: unknown, label: string): JSONObject {
-  const seen = new Set<object>();
-  function clone(item: unknown, depth = 0): JSONValue {
-    if (depth > 64) throw new TypeError(`${label} exceeds the maximum JSON nesting depth.`);
-    if (item === null || typeof item === 'string' || typeof item === 'boolean') return item;
-    if (typeof item === 'number' && Number.isFinite(item)) return item;
-    if (typeof item !== 'object' || item === null || seen.has(item)) {
-      throw new TypeError(`${label} must contain finite, acyclic JSON values.`);
-    }
-    const array = Array.isArray(item);
-    const prototype = Object.getPrototypeOf(item);
-    if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) {
-      throw new TypeError(`${label} must contain only plain JSON objects and arrays.`);
-    }
-    if (Object.getOwnPropertySymbols(item).length) {
-      throw new TypeError(`${label} must not contain symbol keys.`);
-    }
-    const descriptors = Object.getOwnPropertyDescriptors(item);
-    const length = array ? descriptors.length!.value as number : 0;
-    if (array && Object.keys(descriptors).length !== length + 1) {
-      throw new TypeError(`${label} arrays must not contain holes or extra properties.`);
-    }
-    for (const [key, descriptor] of Object.entries(descriptors)) {
-      if (array && key === 'length') continue;
-      if (!('value' in descriptor) || !descriptor.enumerable) {
-        throw new TypeError(`${label} must contain only enumerable JSON data properties.`);
-      }
-      if (array && (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= length)) {
-        throw new TypeError(`${label} arrays must not contain extra properties.`);
-      }
-      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
-        throw new TypeError(`${label} contains an unsupported key: ${key}.`);
-      }
-    }
-    seen.add(item);
-    let result: JSONValue;
-    if (array) {
-      result = Array.from({ length }, (_, index) => clone(descriptors[String(index)]!.value, depth + 1));
-    } else {
-      result = Object.fromEntries(Object.entries(descriptors).map(([key, descriptor]) => [
-        key,
-        // JSONObject permits undefined object values; final request serialization omits them.
-        descriptor.value === undefined ? undefined : clone(descriptor.value, depth + 1),
-      ]));
-    }
-    seen.delete(item);
-    return result;
-  }
-  record(value, label);
-  // Do not invoke user-supplied getters, iterators, or toJSON while validating or copying.
-  return clone(value) as JSONObject;
-}
-
-function httpURL(value: unknown, label: string): URL {
-  if (typeof value !== 'string') throw new TypeError(`${label} must be an absolute HTTP(S) URL.`);
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new TypeError(`${label} must be an absolute HTTP(S) URL.`);
-  }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) {
-    throw new TypeError(`${label} must be an HTTP(S) URL without credentials or a fragment.`);
-  }
-  return url;
-}
-
-function errorMessage(value: unknown): string | undefined {
-  if (typeof value === 'string') return value;
-  if (value !== null && typeof value === 'object') {
-    const body = value as Record<string, unknown>;
-    for (const candidate of [body.error, body.message, body.detail]) {
-      if (typeof candidate === 'string' && candidate) return candidate;
-    }
-    if (body.error !== null && typeof body.error === 'object') {
-      return errorMessage(body.error);
-    }
-  }
-  return undefined;
-}
-
 /** One queue protocol implementation shared by all fal asset kinds. No polling or retries. */
 export class FalAssetModel<INPUT, KIND extends string> implements AssetModelV1<INPUT, KIND> {
   readonly specificationVersion = 'v1' as const;
@@ -153,40 +46,47 @@ export class FalAssetModel<INPUT, KIND extends string> implements AssetModelV1<I
   readonly kind: KIND;
   private readonly base: URL;
   private readonly appPath: string;
-  private readonly fetcher: typeof globalThis.fetch;
+  private readonly transport: AssetProviderTransport;
+  private readonly definition: FalAssetDefinition<INPUT, KIND>;
 
   constructor(
     readonly modelId: string,
-    private readonly settings: FalAssetProviderSettings,
-    private readonly definition: FalAssetDefinition<INPUT, KIND>,
-    private readonly validateProviderOptions?: (options: JSONObject) => void,
+    settings: FalAssetProviderSettings,
+    definition: FalAssetDefinition<INPUT, KIND>,
   ) {
+    if (typeof modelId !== 'string') throw new TypeError('fal modelId must be an explicit owner/app path.');
     const parts = modelId.split('/');
-    if (parts.length < 2 || parts.some(part => !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(part))) {
-      throw new TypeError('fal modelId must contain safe owner/app path segments.');
+    // fal's workflow and Comfy endpoints include a namespace before owner/app.
+    const appPartCount = parts[0] === 'workflows' || parts[0] === 'comfy' ? 3 : 2;
+    if (parts.length < appPartCount || parts.some(part => !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(part))) {
+      throw new TypeError('fal modelId must contain safe owner/app path segments, including namespace/owner/app for workflows or comfy.');
     }
-    if (typeof definition.kind !== 'string' || !definition.kind.trim()) {
+    if (!definition || typeof definition.kind !== 'string' || !definition.kind.trim()) {
       throw new TypeError('fal asset kind must be a nonempty string.');
     }
-    this.base = httpURL(settings.baseURL ?? 'https://queue.fal.run', 'fal baseURL');
-    if (this.base.search) throw new TypeError('fal baseURL must not include a query.');
-    this.base.pathname = this.base.pathname.replace(/\/+$/, '');
+    this.definition = { ...snapshotAssetMapping(definition), kind: definition.kind };
+    this.transport = new AssetProviderTransport({
+      ...settings, provider: 'fal', baseURL: settings.baseURL ?? 'https://queue.fal.run',
+      environmentVariableName: 'FAL_KEY', authorizationScheme: 'Key',
+    });
+    this.base = new URL(this.transport.baseURL);
     const prefix = this.base.pathname.replace(/\/$/, '');
-    this.appPath = `${prefix}/${parts[0]}/${parts[1]}`;
-    this.fetcher = settings.fetch ?? globalThis.fetch;
+    this.appPath = `${prefix}/${parts.slice(0, appPartCount).join('/')}`;
     this.provider = settings.name ?? 'fal';
     this.kind = definition.kind;
   }
 
   async doStart(options: AssetModelV1CallOptions<INPUT>): Promise<AssetModelV1StartResult> {
-    const mapped = jsonObject(await this.definition.mapInput(options.input), 'fal mapped input');
+    const mapped = jsonObject(
+      this.definition.mapInput ? await this.definition.mapInput(options.input) : options.input,
+      'fal input',
+    );
     const extra = jsonObject(options.providerOptions.fal ?? {}, 'providerOptions.fal');
     for (const key of Object.keys(extra)) {
-      if (CORE_INPUT_KEYS.has(key) || Object.hasOwn(mapped, key)) {
+      if (Object.hasOwn(mapped, key)) {
         throw new TypeError(`providerOptions.fal.${key} cannot override a mapped input field; pass it through input.`);
       }
     }
-    this.validateProviderOptions?.(extra);
     const body = { ...extra, ...mapped };
     const url = new URL(`${this.base.href.replace(/\/$/, '')}/${this.modelId}`);
     if (options.webhookUrl !== undefined) {
@@ -257,9 +157,11 @@ export class FalAssetModel<INPUT, KIND extends string> implements AssetModelV1<I
     }
     const resultResponse = await this.request(resultUrl, 'GET', options);
     try {
-      const result = await this.definition.mapResult(resultResponse.value);
-      if (!result || !Array.isArray(result.assets)) {
-        throw new TypeError('fal mapResult must return an asset result with an assets array.');
+      // Snapshot before calling user mapping code so mutation cannot rewrite the native result.
+      const output = jsonValue(resultResponse.value, 'fal output');
+      const result = await (this.definition.mapResult ?? mapAssetResult)(jsonValue(output, 'fal mapper output'));
+      if (!result || !Array.isArray(result.assets) || result.assets.length === 0) {
+        throw new TypeError('fal mapResult must return an asset result with a nonempty assets array.');
       }
       return {
         status: 'completed',
@@ -267,7 +169,7 @@ export class FalAssetModel<INPUT, KIND extends string> implements AssetModelV1<I
           ...result,
           providerMetadata: {
             ...result.providerMetadata,
-            fal: { ...result.providerMetadata?.fal, requestId: operation.requestId },
+            fal: { ...result.providerMetadata?.fal, requestId: operation.requestId, output },
           },
           response: resultResponse.response,
         },
@@ -305,7 +207,7 @@ export class FalAssetModel<INPUT, KIND extends string> implements AssetModelV1<I
   }
 
   private operation(value: unknown): QueueOperation {
-    const op = record(value, 'fal operation');
+    const op = jsonObject(value, 'fal operation');
     if (op.type !== 'fal-queue' || op.version !== 1 || op.modelId !== this.modelId) {
       throw new TypeError('fal operation type, version, or modelId does not match this model.');
     }
@@ -329,71 +231,17 @@ export class FalAssetModel<INPUT, KIND extends string> implements AssetModelV1<I
     return url;
   }
 
-  private invalidResponse(response: FalResponse, cause: unknown): APICallError {
-    return new APICallError({
-      message: `Invalid fal response: ${cause instanceof Error ? cause.message : String(cause)}`,
-      url: response.url, requestBodyValues: undefined,
-      statusCode: response.statusCode, responseHeaders: response.response.headers,
-      responseBody: response.rawBody, cause, isRetryable: false,
-    });
+  private invalidResponse(response: AssetProviderResponse, cause: unknown) {
+    return invalidResponse(response, cause, 'fal');
   }
 
-  private async request(
+  private request(
     url: URL,
     method: 'POST' | 'GET' | 'PUT',
     options: Pick<AssetModelV1OperationOptions, 'headers' | 'abortSignal'>,
     body?: JSONObject,
     allowEmpty = false,
-  ): Promise<FalResponse> {
-    // Validate before attaching credentials, including when resuming an untrusted persisted handle.
-    if (url.origin !== this.base.origin) throw new TypeError('fal requests must use the configured baseURL origin.');
-    options.abortSignal.throwIfAborted();
-    const headers = new Headers(this.settings.headers);
-    new Headers(options.headers).forEach((value, key) => headers.set(key, value));
-    headers.set('Authorization', `Key ${loadApiKey({ apiKey: this.settings.apiKey, environmentVariableName: 'FAL_KEY', description: 'fal' })}`);
-    headers.set('Accept', 'application/json');
-    if (body !== undefined) headers.set('Content-Type', 'application/json');
-    let response: Response;
-    let rawBody: string;
-    try {
-      response = await this.fetcher(url.href, {
-        method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: options.abortSignal, redirect: 'error',
-      });
-      // Native fetch enforces redirect:error. Also reject a redirect returned by a custom fetch.
-      if (response.redirected || (response.url && new URL(response.url).origin !== this.base.origin)) {
-        throw new APICallError({
-          message: 'fal request redirected outside the allowed request flow.',
-          url: url.href, requestBodyValues: body, statusCode: response.status, isRetryable: false,
-        });
-      }
-      rawBody = await response.text();
-    } catch (cause) {
-      if (options.abortSignal.aborted) throw options.abortSignal.reason;
-      if (APICallError.isInstance(cause) || (cause instanceof Error && cause.name === 'AbortError')) throw cause;
-      throw new APICallError({ message: 'fal network request failed.', url: url.href, requestBodyValues: body, cause, isRetryable: true });
-    }
-    const responseHeaders = Object.fromEntries(response.headers.entries());
-    let value: unknown;
-    let parseError: unknown;
-    try {
-      value = rawBody === '' && allowEmpty ? undefined : JSON.parse(rawBody);
-    } catch (cause) {
-      parseError = cause;
-    }
-    if (!response.ok) {
-      throw new APICallError({
-        message: errorMessage(value) ?? `fal request failed with HTTP ${response.status}.`,
-        url: url.href, requestBodyValues: body, statusCode: response.status,
-        responseHeaders, responseBody: rawBody,
-        isRetryable: response.status === 408 || response.status === 429 || response.status >= 500,
-      });
-    }
-    const result: FalResponse = {
-      url: url.href, statusCode: response.status, value, rawBody,
-      response: { headers: responseHeaders, body: value },
-    };
-    if (parseError !== undefined) throw this.invalidResponse(result, parseError);
-    return result;
+  ): Promise<AssetProviderResponse> {
+    return this.transport.request(url, method, options, body, allowEmpty);
   }
 }

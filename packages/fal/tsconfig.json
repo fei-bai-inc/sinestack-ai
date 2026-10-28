@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "src", "outDir": "dist" },
-  "references": [{ "path": "../provider" }],
+  "references": [{ "path": "../provider" }, { "path": "../provider-utils" }],
   "include": ["src/**/*.ts"]
 }

@@ -36,6 +36,9 @@ export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 | `ai/src/generate-video/{generate-video,start-video,get-video-status}.ts` | submit/status 分离、webhook/polling 和幂等键的派生参考。 |
 | 清单所列 `@ai-sdk/provider/src/video-model/v4/*` | Asset 协议、operation 和判别式 status 的来源。 |
 | `@ai-sdk/provider-utils/src/{retry-with-exponential-backoff,delay}.ts` | SDK helper 使用的公共底层工具。 |
+| `@ai-sdk/provider-utils/src/{get-from-api,post-to-api,response-handler}.ts` | 三个 asset adapter 共用的公开 HTTP 与 JSON 响应 helper。 |
+| `@ai-sdk/provider/src/errors/api-call-error.ts` | HTTP 错误的默认 retry classification，包括 408、409、429 和 5xx。 |
+| `@ai-sdk/provider-utils/src/handle-fetch-error.ts` | 经公开 GET/POST helper 间接使用的网络错误处理；不直接 deep import。 |
 | `ai/LICENSE` | 上游归属与许可证来源。 |
 
 “跟踪”包括直接依赖、间接依赖和派生参考，不代表所有文件都被复制。`executeStartStatusFlow`、`waitForWebhook` 等视频私有函数不在包导出中，不能把 deep import 当成可用扩展接口。当前实现也没有把 3D 数据包装成 video 来绕过协议限制。
@@ -45,6 +48,7 @@ export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 | 方面 | 当前约定 |
 |---|---|
 | 基础重试 | 直接使用 `prepareRetries`，不再提供资产层的 initial/max delay 或 retry callbacks。 |
+| HTTP | GET/POST 与响应处理走公开 SDK helpers；fal PUT 是一次薄 fetch，复用 SDK response handlers，不复制内部网络分类。 |
 | 阶段选择 | start/generate/cancel 默认 0 次重试，status 默认 2 次；正数提交重试需要 provider 幂等能力。 |
 | Signal | 使用 `mergeAbortSignals` 的合作式取消，不保证强制结束忽略 signal 的 provider 或 hook。 |
 | Callbacks | 使用 `mergeCallbacks`：await，忽略回调错误。只作观测，关键持久化在 `startAsset` 返回后显式 await。 |
@@ -63,7 +67,7 @@ npm ci
 npm run check:upstream
 ```
 
-[`scripts/check-upstream.mjs`](../scripts/check-upstream.mjs) 只读取本地 manifest 与已安装包，检查 3 个包的包名、精确版本、license，以及 **14 个原始文件的 SHA-256**。缺包、缺文件或任何不匹配均返回非零退出码。
+[`scripts/check-upstream.mjs`](../scripts/check-upstream.mjs) 只读取本地 manifest 与已安装包，检查 3 个包的包名、精确版本、license，以及 **19 个原始文件的 SHA-256**。缺包、缺文件或任何不匹配均返回非零退出码。
 
 脚本不联网、不安装依赖、不更新基线。CI 在 Node.js 22/24 上执行 `npm ci`、`npm run check` 和 `npm run check:upstream`，不自动发布。
 
@@ -72,7 +76,7 @@ npm run check:upstream
 ## 升级步骤
 
 1. 在同一个可审阅改动中更新候选包版本、core 的精确 peer 约束及锁文件；先保留旧 manifest，观察差异。
-2. 审阅三个 internal helper 的签名和行为，以及其依赖的 retry/delay 实现。优先调整集中入口，避免向 provider 和 facade 扩散兼容代码。
+2. 审阅三个 internal helper 的签名和行为，以及其依赖的 retry/delay 实现；同时审阅共享 transport 使用的公开 HTTP helpers 与错误处理。优先调整集中入口，避免向 provider 和 facade 扩散兼容代码。
 3. 对比视频来源的相关修复，确认哪些适用于仍自有的资产编排；保留上表中明确的差异。
 4. 更新必要实现与相关回归用例后，再记录新版本、hash、日期和来源；不能只重算 hash 消除告警。
 5. 同步受影响的迁移说明和 `NOTICE`，运行 `npm run check` 与 `npm run check:upstream`。

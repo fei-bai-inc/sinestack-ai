@@ -1,26 +1,27 @@
 # Sine AI
 
-基于 **Vercel AI SDK 7** 扩展的 TypeScript 资产生成 SDK。`AssetModelV1` 为 3D 模型、音效及自定义能力提供生成、提交、查询、等待和取消接口，`generate3D`、`generateSoundEffect` 是 `generateAsset` 上的薄类型入口。
+基于 **Vercel AI SDK 7** 扩展的 TypeScript 资产生成 SDK。3D、音效、音乐、3D 动作、文档及自定义资产类型共用 `AssetModelV1`，通过同一套生成、提交、查询、等待和取消接口执行。
 
-重试策略、AbortSignal 合并和 callback 分发直接复用 AI SDK，通过唯一的 [`internal/sdk.ts`](packages/core/src/internal/sdk.ts) 集中导入。**通用资产的提交、polling、结果映射与取消编排仍由 Sine AI 维护**；AI SDK 当前没有可直接接入 `AssetModelV1` 的通用 executor。
+**Provider adapter 实现平台协议，不维护模型目录。** fal、WaveSpeed、Replicate 的所有入口都接受显式模型 ID；没有默认模型、型号白名单或针对某个模型的固定参数 schema。新增同协议模型无需登记到 SDK 或更新 SDK。
 
-这版采用最小维护边界：沿用 SDK 的 retry 和观测回调语义，删去了资产层另外实现的强制超时、hook 错误协议和终态状态机。初版 API 的收缩见 [迁移说明](docs/MIGRATION.md)。
+重试策略、AbortSignal 合并和 callback 分发直接复用 AI SDK。资产协议所需的 submit/status/poll/result/cancel 编排仍由 Sine AI 维护；上游当前没有可直接接入 `AssetModelV1` 的通用 executor。
 
-## 当前范围
+## 包与维护边界
 
 | 包 | 职责 |
 |---|---|
-| `@sine-ai/provider` | 版本化 `AssetModelV1`、资产结果和可持久化 operation 协议。 |
-| `@sine-ai/core` | 必要的资产编排、3D/音效接口、operation 恢复、显式文件物化；基础机制委托给 AI SDK。 |
-| `@sine-ai/fal` | fal queue adapter，内置 3D/音效映射，并支持 `fal.asset()` 接入其他 fal endpoint。 |
+| `@sine-ai/provider` | 版本化资产协议、结果、operation 和可选的外部映射接口。 |
+| `@sine-ai/core` | 唯一的资产编排、按 kind 的薄入口、恢复和显式文件物化。 |
+| `@sine-ai/provider-utils` | 共享 JSON/连接校验、默认文件解析；HTTP 请求和响应处理委托给 AI SDK 公开 helpers。 |
+| `@sine-ai/fal` | fal queue 的提交、查询、结果获取、取消协议。 |
+| `@sine-ai/wavespeed` | WaveSpeed prediction 的提交和查询协议。 |
+| `@sine-ai/replicate` | Replicate prediction 的提交、查询、取消和固定版本协议。 |
 
-当前内置模型入口是 `fal.threeD()` → `fal-ai/hunyuan3d-v3/text-to-3d`，以及 `fal.soundEffect()` → `fal-ai/elevenlabs/sound-effects/v2`。默认值与参数映射见 [fal provider](packages/fal/src/index.ts)。音乐、3D 动作和文档可以使用通用协议扩展；当前没有为它们提供现成的专用远端 adapter。
+每个 adapter 方法只完成一次 provider 操作，不增加自己的 polling、重试、abort 或 hook 执行机制。kind 入口只标记资产类型，不选择模型，也不推断远端模型能力。
 
 ## 从源码使用
 
-**这些包尚未发布到 npm。** 当前通过仓库中的 npm workspaces 开发和使用；下面示例的 `@sine-ai/*` 导入由 workspace 链接解析。
-
-需要 Node.js 22 或 24，以及 npm：
+**这些包尚未发布到 npm。** 当前通过仓库的 npm workspaces 使用，需要 Node.js 22 或 24：
 
 ```sh
 git clone https://github.com/fei-bai-inc/sine-ai.git
@@ -29,208 +30,179 @@ npm ci
 npm run build
 ```
 
-先运行无需 API key 或网络的本地 document 示例：
+无需 key 或网络的本地 document 示例：
 
 ```sh
 node --experimental-strip-types examples/custom-provider.ts
 ```
 
-该示例已纳入 `npm run typecheck`。它返回 UTF-8 文本资产，展示自定义能力如何进入同一套资产编排。
+## 显式模型 ID 与原生 input
 
-## 生成 3D 模型与音效
-
-fal 连接默认读取 `FAL_KEY`，也可以通过 `createFalAssetProvider({ apiKey })` 显式传入。`baseURL`、`fetch` 和额外 headers 可在连接配置中指定。
+三个 provider 提供相同的入口：
 
 ```ts
-import { generate3D, generateSoundEffect } from '@sine-ai/core';
-import { createFalAssetProvider } from '@sine-ai/fal';
-
-const fal = createFalAssetProvider();
-
-const threeD = await generate3D({
-  model: fal.threeD(),
-  prompt: 'A small stylized stone cottage with a red roof',
-  providerOptions: {
-    fal: { generate_type: 'LowPoly', face_count: 80_000 },
-  },
-  poll: { intervalMs: 2_000, timeoutMs: 600_000 },
-  timeoutMs: 660_000,
-  hooks: {
-    onProgress({ status, message }) {
-      console.log(status, message);
-    },
-  },
-});
-
-console.log(threeD.asset);  // 首个产物
-console.log(threeD.assets); // 全部产物，例如模型和缩略图
-
-const sound = await generateSoundEffect({
-  model: fal.soundEffect(),
-  prompt: 'Gentle rain on a wooden roof, seamless ambience',
-  durationSeconds: 6,
-  promptInfluence: 0.5,
-  loop: true,
-  providerOptions: {
-    fal: { output_format: 'mp3_44100_128' },
-  },
-});
-
-console.log(sound.assets);
+provider.music(modelId);
+provider.threeD(modelId);
+provider.soundEffect(modelId);
+provider.animation3D(modelId);
+provider.asset(modelId, { kind: 'document' });
 ```
 
-`providerOptions.fal` 用于模型特定的附加参数，不能覆盖已由输入映射生成的字段。`prompt`、`durationSeconds` 等应通过对应的输入接口传入。
+调用方选择平台上实际存在、接受相应任务的模型，并按该模型的原生 schema 提供 `input`。SDK 校验 JSON 与协议字段，不把一个模型的参数规则套在整类能力上。
 
-### 文件默认保留为引用
+```ts
+import { generateMusic, generate3D, generateAsset } from '@sine-ai/core';
+import type { JSONObject } from '@sine-ai/provider';
+import { createFalAssetProvider } from '@sine-ai/fal';
+import { createWaveSpeedAssetProvider } from '@sine-ai/wavespeed';
+import { createReplicateAssetProvider } from '@sine-ai/replicate';
 
-结果中的 `AssetFile` 是 `url`、`binary` 或 `base64`。URL 默认不会被 SDK 下载；可直接交给业务存储或消费端。需要 bytes 时显式调用：
+const fal = createFalAssetProvider();
+const wavespeed = createWaveSpeedAssetProvider();
+const replicate = createReplicateAssetProvider();
+
+// modelId 与原生 input 来自应用配置；SDK 不需要预先知道该模型。
+async function createMusic(modelId: string, input: JSONObject) {
+  return generateMusic({ model: fal.music(modelId), input });
+}
+
+async function createThreeD(modelId: string, input: JSONObject) {
+  return generate3D({ model: wavespeed.threeD(modelId), input });
+}
+
+async function createDocument(modelId: string, input: JSONObject) {
+  return generateAsset({
+    model: replicate.asset(modelId, { kind: 'document' }),
+    input,
+  });
+}
+```
+
+`generateMusic`、`generate3D`、`generateSoundEffect`、`generateAnimation3D` 的原生输入形式只检查 kind，然后调用 `generateAsset`。参数不会被裁剪或悄悄改名。例如模型要求 `text`、`is_instrumental` 或 `duration`，就直接在 input 中使用这些字段。
+
+`providerOptions.fal / wavespeed / replicate` 可以补充原生参数，但不能覆盖 input 或 `mapInput` 已提供的同名字段。推荐把模型输入放在 `input`，避免重复定义。
+
+## 外部实现、按需注入映射
+
+`mapInput` 和 `mapResult` 都是可选、可独立替换的函数。缺省时原样提交原生 JSON，并使用共享的常见文件解析器。
+
+映射既可以是普通对象，也可以是外部包实现的类实例。创建 model 时会保存方法引用并绑定原实例，因此原型方法、`this` 和私有字段都可正常使用。
+
+应用需要统一业务输入或处理特殊输出时，自行提供映射：
+
+```ts
+import { generateMusic } from '@sine-ai/core';
+import type { AssetModelMapping } from '@sine-ai/provider';
+
+interface SongRequest {
+  description: string;
+  seconds: number;
+}
+
+// 可由任意外部包导出，再注入连接；不需要修改 provider 或 executor。
+const mapping: AssetModelMapping<SongRequest> = {
+  mapInput(input) {
+    return { text: input.description, duration: input.seconds };
+  },
+};
+
+const model = fal.music<SongRequest>('your-owner/your-music-model', mapping);
+
+const result = await generateMusic({
+  model,
+  input: { description: 'A calm piano score', seconds: 120 },
+});
+```
+
+特殊结果 schema 可以单独注入 `mapResult`。它收到平台的原生 output，必须返回真实文件的非空 `assets`；结果的任务身份、原生输出快照仍由 adapter 保留。完整示例与默认解析边界见 [Media providers](docs/MEDIA_PROVIDERS.md)。
+
+## 文件与原生结果
+
+结果提供：
+
+- `result.asset`：首个文件。
+- `result.assets`：全部标准化文件。
+- `result.providerMetadata.<provider>.output`：独立保留的原生输出快照。
+
+默认解析支持根 URL、URL 数组、显式 `{ url, content_type?, file_name?, file_size? }` 文件对象，以及嵌套文件对象和常见文件列表。它不会扫描文本中的链接，也不会把任意 metadata 字符串当文件。未知结构通过 `mapResult` 扩展，未知文件格式保守使用 `application/octet-stream`。
+
+URL 默认保留引用，不隐式下载。需要 bytes 时：
 
 ```ts
 import { materializeAsset } from '@sine-ai/core';
 
-const file = await materializeAsset(threeD.asset, {
+const file = await materializeAsset(result.asset, {
   maxBytes: 64 * 1024 * 1024,
 });
-
-console.log(file.mediaType, file.uint8Array.byteLength);
 ```
 
-物化默认上限是 64 MiB，可传 `abortSignal` 和自定义 `download`。自定义 downloader 负责自己的网络访问策略、读取过程中的大小限制及对 signal 的响应，core 还会检查它返回的 bytes。生成成功与文件下载成功是两个独立阶段。
+物化默认上限 64 MiB。生成与下载是独立阶段；自定义 downloader 负责自己的网络策略、大小限制和 AbortSignal 响应。
 
-## 提交、恢复与取消
-
-长任务可以先提交，把 operation 存入自己的任务系统，再由其他请求或进程恢复。关键持久化应在 `startAsset` 返回后显式 await；观测 hook 的错误不会让调用失败。下面用本地文件演示，服务端可把文件操作换成自己的数据库写入：
+## 提交、持久化与恢复
 
 ```ts
-import { readFile, writeFile } from 'node:fs/promises';
-import {
-  startAsset,
-  getAssetStatus,
-  waitForAsset,
-  cancelAsset,
-  type AssetOperation,
-} from '@sine-ai/core';
-import { createFalAssetProvider } from '@sine-ai/fal';
+import { startAsset, getAssetStatus, waitForAsset, cancelAsset } from '@sine-ai/core';
 
-const model = createFalAssetProvider().threeD();
+const model = fal.threeD('your-owner/your-geometry-model');
 const started = await startAsset({
   model,
-  input: { prompt: 'A low-poly wooden treasure chest' },
+  input: { prompt: 'A wooden lantern' },
 });
 
-// 保存失败会在这里抛出；started.operation 仍可用于补写或恢复。
-await writeFile('asset-operation.json', JSON.stringify(started.operation), 'utf8');
+// 由应用保存整个 operation，以及对应的原连接 ID。
+// await store.put(taskId, JSON.stringify(started.operation));
 
-// 之后重建同一个 provider/model/kind 的连接。
-const restoredModel = createFalAssetProvider().threeD();
-const operation = JSON.parse(
-  await readFile('asset-operation.json', 'utf8'),
-) as AssetOperation<'model-3d'>;
-const status = await getAssetStatus({ model: restoredModel, operation });
-console.log(status.status);
-
-// 需要等待结果时调用；不会重新提交任务。
-const result = await waitForAsset({
-  model: restoredModel,
-  operation,
-  poll: { timeoutMs: 600_000 },
-});
-console.log(result.assets);
+const status = await getAssetStatus({ model, operation: started.operation });
+const result = await waitForAsset({ model, operation: started.operation });
 ```
 
-如果用户选择取消，用 `cancelAsset({ model: restoredModel, operation })` 发出独立的取消请求。返回的 `status: 'requested'` 表示 provider 接受了取消请求，`'cancelled'` 表示 adapter 已观察到取消确认；本地 AbortSignal 只通知当前调用取消，不会自动调用远端取消。
+恢复会检查版本、provider、modelId、kind 和 provider operation 中的任务身份/API 地址。查询失败不会再次提交。operation 不保存密钥；应用仍需恢复原租户、账号与连接。
 
-SDK 在恢复时检查 operation 的版本、provider、modelId、kind 和 JSON payload。`getAssetStatus`、`waitForAsset`、`cancelAsset` 都围绕同一远端任务工作，不会在查询失败后创建替代任务。
+远端取消通过 `cancelAsset` 显式发出。`requested` 表示接受取消请求，`cancelled` 表示已观察到确认。本地 abort 不会自动取消远端任务。WaveSpeed 没有已验证的远端取消协议，因此不暴露该能力。
 
-### Webhook
+关键持久化应在 `startAsset` 返回后显式 await。观测 hook 的错误不会使提交失败，也不能承担必须成功的事务步骤。
 
-`generateAsset` 接受 `webhook: () => ({ url, received })`。接收端先认证并关联通知，再 resolve `received`；SDK 随后查询原 operation，取得最终结果。模型不支持 webhook 时回到 polling，且不调用该 factory。
+## 连接与 webhook
 
-外部接收端已存在时，`startAsset` 可传 `webhookUrl`；恢复等待时，`waitForAsset` 可传已有的 webhook promise。通知认证、外部监听资源和持久化由应用维护。
+| Provider | 默认 baseURL | 默认环境变量 |
+|---|---|---|
+| fal | `https://queue.fal.run` | `FAL_KEY` |
+| WaveSpeed | `https://api.wavespeed.ai/api/v3` | `WAVESPEED_API_KEY` |
+| Replicate | `https://api.replicate.com/v1` | `REPLICATE_API_TOKEN` |
 
-## 接入自己的 endpoint 或 provider
+连接支持 `apiKey`、`baseURL`、`headers`、`fetch`、`name`，配置会复制保存。调用级 headers 不能覆盖实际认证，带凭证的请求拒绝重定向。
 
-### 复用 fal 的 queue 协议
-
-`fal.asset()` 只需要输入/结果映射，继续使用已有的 submit/status/cancel 协议。下面是假设你已部署了一个返回 `{ url: string }` 的 fal document endpoint；替换 endpoint ID 与映射即可：
-
-```ts
-import { generateAsset } from '@sine-ai/core';
-import { createFalAssetProvider } from '@sine-ai/fal';
-
-const fal = createFalAssetProvider();
-const documentModel = fal.asset<{ prompt: string }, 'document'>(
-  'your-owner/your-document-model',
-  {
-    kind: 'document',
-    mapInput({ prompt }) {
-      return { prompt };
-    },
-    mapResult(raw) {
-      if (raw === null || typeof raw !== 'object' ||
-          !('url' in raw) || typeof raw.url !== 'string') {
-        throw new TypeError('Expected a document URL');
-      }
-      return {
-        assets: [{
-          type: 'url',
-          url: raw.url,
-          mediaType: 'application/pdf',
-          role: 'document',
-        }],
-      };
-    },
-  },
-);
-
-const document = await generateAsset({
-  model: documentModel,
-  input: { prompt: 'Create a one-page product brief' },
-});
-```
-
-`mapResult` 收到的是 fal REST 的原始结果 body，不是 fal JavaScript SDK 的 `{ data }` 包装。映射应校验实际的远端响应结构。
-
-### 实现 `AssetModelV1`
-
-对于其他服务，直接实现 `AssetModelV1<YourInput, 'your-kind'>`：同步接口提供 `doGenerate`；异步接口成对提供 `doStart`/`doStatus`，按需提供 `doCancel`。每个方法只完成一个 provider 操作，重试、轮询和生命周期仍由 core 处理。
-
-[examples/custom-provider.ts](examples/custom-provider.ts) 是一个完整、无网络的 `document` provider：`doGenerate` 返回带有 `Uint8Array` 的文本文件，然后直接调用 `generateAsset` 和 `materializeAsset`。替换这个单次生成方法即可接入自己的 PDF renderer 或其他资产服务。
+`startAsset` 可传 `webhookUrl`；`generateAsset` 可传 `webhook: () => ({ url, received })`。接收端负责认证、关联与去重，再 resolve 通知；core 随后查询原 operation 取得结果。通知不会导致新提交。
 
 ## 执行语义
 
 | 项目 | 约定 |
 |---|---|
-| 提交/直接生成 retry | 默认 `0`；配置正数要求模型明确声明 `idempotentStart` / `idempotentGenerate`。当前 fal adapter 不声明提交幂等，因此不能开启 submit retry。 |
-| Status retry | 默认 `2`，即最多 3 次请求 attempt；远端失败状态不会触发重新提交。 |
-| 退避与 Retry-After | 直接使用 `ai/internal.prepareRetries`；不另行配置资产层的 initial/max delay 或 retry callbacks。 |
-| 幂等键 | 每次逻辑提交一个 key，重试期间保持不变；尊重调用者提供的 `idempotency-key`。 |
-| Polling | 第一次查询立即进行，之后默认每 2 秒一次；默认 10 分钟后发出完成等待的 timeout signal。 |
-| Timeout / abort | 使用 SDK 合并 signal，采用合作式取消；不会强制结束忽略 signal 的 provider 或挂起的 hook。 |
-| Hooks | 只有 `onStart`、`onOperation`、`onProgress`、`onFinish`、`onError`；使用 SDK `mergeCallbacks`，会 await，错误被忽略。 |
-| 取消与恢复 | 已取得的 operation 随执行错误返回，便于之后查询或取消；远端尚未返回 handle 的不确定提交不能凭空恢复。 |
+| 提交/直接生成 retry | 默认 0；正数需要模型明确声明远端幂等。三个远端 adapter 均不声明提交幂等。 |
+| Status retry | 默认 2，由 SDK 实现退避、错误分类和 Retry-After；不重新创建任务。 |
+| Polling | 首次查询立即进行，之后默认每 2 秒一次；等待默认 10 分钟 timeout signal。 |
+| Timeout / abort | SDK 合并信号，采用合作式取消；不会强行结束忽略信号的 provider 或挂起 hook。 |
+| Hooks | 五个观测事件：onStart、onOperation、onProgress、onFinish、onError；SDK await 并忽略 callback 错误。 |
+| 文件 | 保持引用，显式物化；没有后台存储、数据库或持久化调度器。 |
 
-**Hooks 只用于观测。** 日志或指标回调失败不会改变生成结果；`onFinish` 抛错后调用仍可成功返回。`onError` 也接收调用退出时的 abort/timeout 错误，hook 自身的错误不会替换原执行错误。关键持久化、鉴权或其他必须成功的步骤应放在 hook 之外。
+`@sine-ai/provider-utils` 复用 AI SDK 的 GET/POST 与 response handlers，不维护另一套 retry policy。fal PUT 取消没有上游公开请求 helper，因此保留一次薄 fetch，并复用相同 SDK response handlers。
 
-`timeoutMs` 为本次调用创建 timeout signal，`poll.timeoutMs` 为完成等待阶段创建 timeout signal；后续查询会收到合并后的 signal。这不是 Promise 必定在指定毫秒内结束的保证：provider、自定义 downloader 和 sleep 需要响应 signal，用户 hook 需要自行及时结束。只有 webhook 通知等待保留一个局部的通知/SDK delay 竞争。
-
-`poll.delay` 只替换轮询 sleep。SDK 不提供数据库、任务队列或跨重启调度；这些职责可以由已有任务系统承接。
-
-## 开发与验证
+## 开发与示例
 
 ```sh
-npm run typecheck
-npm test
 npm run check
 npm run check:upstream
+node --experimental-strip-types examples/media-providers.ts
 ```
 
-`check` 执行类型检查、构建和测试；`check:upstream` 离线核对已安装上游包的精确版本、许可证与 14 个源文件 hash。CI 配置 Node.js 22 / 24 矩阵，不自动发布。
+`check` 包含类型、构建和 mock 测试。`check:upstream` 离线核对 3 个上游包的精确版本、许可证和 19 项源文件 hash。CI 使用 Node.js 22/24，不自动发布。
 
-当前测试使用本地模型和 mock fetch，没有执行真实 fal 计费生成。代码采用 Web API，但尚未完成 Cloudflare/workerd 运行验证。
+[media-providers.ts](examples/media-providers.ts) 接受 provider、kind、modelId、原生 JSON；不传参数只打印用法。[generate-assets.ts](examples/generate-assets.ts) 展示应用显式选择实际模型，[submit-and-resume.ts](examples/submit-and-resume.ts) 展示外部持久化。示例里的模型选择不构成 SDK 支持清单。
+
+测试不调用真实计费 API；尚未完成 Cloudflare/workerd 验证。
 
 ## 上游与许可证
 
-基线为 **`ai@7.0.155`、`@ai-sdk/provider@4.0.34`、`@ai-sdk/provider-utils@5.0.70`**。由于使用 `ai/internal`，core 的 `ai` peer dependency 精确锁定 `7.0.155`，不使用 `^` 范围。内部接口统一经过 `internal/sdk.ts`；升级时必须审阅并更新基线。资产协议与必要编排参考了 SDK 的视频生成/提交/状态逻辑。
+基线为 `ai@7.0.155`、`@ai-sdk/provider@4.0.34`、`@ai-sdk/provider-utils@5.0.70`。core 的 `ai` peer dependency 精确锁定；internal 导入集中在 `packages/core/src/internal/sdk.ts`，升级需审阅。
 
-项目使用 **Apache-2.0**，保留 `Copyright 2023 Vercel, Inc.` 及 Sine AI 修改归属。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE)、[上游来源与升级流程](docs/UPSTREAM.md) 和 [架构说明](docs/ARCHITECTURE.md)。精确基线记录在 [upstream.json](upstream.json)。
+项目采用 Apache-2.0，保留 Vercel 与 Sine AI 的归属。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE)、[UPSTREAM.md](docs/UPSTREAM.md)、[ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [迁移说明](docs/MIGRATION.md)。

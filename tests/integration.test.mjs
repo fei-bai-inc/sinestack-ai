@@ -4,13 +4,14 @@ import { APICallError } from '@ai-sdk/provider';
 import {
   generate3D, generateSoundEffect, startAsset, waitForAsset,
 } from '@sine-ai/core';
-import {
-  createFalAssetProvider, FAL_THREE_D_MODEL, FAL_SOUND_EFFECT_MODEL,
-} from '@sine-ai/fal';
+import { createFalAssetProvider } from '@sine-ai/fal';
 
 const BASE = 'https://queue.fal.run';
 const API_KEY = 'fake-integration-key';
 const retry = { status: 2 };
+// Deliberately unregistered IDs: the adapter supports the queue protocol, not a model catalog.
+const THREE_D_MODEL = 'integration-vendor/new-geometry/variant';
+const SOUND_EFFECT_MODEL = 'integration-vendor/new-audio/variant';
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -27,8 +28,8 @@ function accepted(modelId, requestId) {
 
 const cases = [
   {
-    name: '3D', kind: 'model-3d', modelId: FAL_THREE_D_MODEL,
-    model: fal => fal.threeD(), generate: generate3D,
+    name: '3D', kind: 'model-3d', modelId: THREE_D_MODEL,
+    model: fal => fal.threeD(THREE_D_MODEL), generate: generate3D,
     input: { prompt: 'A stylized wooden treasure chest' },
     wireInput: { prompt: 'A stylized wooden treasure chest' },
     output: {
@@ -38,9 +39,9 @@ const cases = [
     assetURL: 'https://v3.fal.media/chest.glb', mediaType: 'model/gltf-binary', assetCount: 2,
   },
   {
-    name: 'sound effect', kind: 'sound-effect', modelId: FAL_SOUND_EFFECT_MODEL,
-    model: fal => fal.soundEffect(), generate: generateSoundEffect,
-    input: { prompt: 'A creaking wooden chest opens', durationSeconds: 3, promptInfluence: 0.6, loop: false },
+    name: 'sound effect', kind: 'sound-effect', modelId: SOUND_EFFECT_MODEL,
+    model: fal => fal.soundEffect(SOUND_EFFECT_MODEL), generate: generateSoundEffect,
+    input: { text: 'A creaking wooden chest opens', duration_seconds: 3, prompt_influence: 0.6, loop: false },
     wireInput: { text: 'A creaking wooden chest opens', duration_seconds: 3, prompt_influence: 0.6, loop: false },
     output: { audio: { url: 'https://v3.fal.media/chest-open.mp3' } },
     assetURL: 'https://v3.fal.media/chest-open.mp3', mediaType: 'audio/mpeg', assetCount: 1,
@@ -108,7 +109,7 @@ for (const scenario of cases) {
     };
 
     const result = await scenario.generate({
-      model: scenario.model(fal), ...scenario.input,
+      model: scenario.model(fal), input: scenario.input,
       timeoutMs: 2_000, retry, hooks,
       poll: {
         intervalMs: 0, timeoutMs: 1_500,
@@ -148,19 +149,19 @@ for (const scenario of cases) {
 
 test('a fal job resumes through the real core from persisted JSON and a fresh provider without another POST', { timeout: 5_000 }, async t => {
   const network = t.mock.method(globalThis, 'fetch', () => assert.fail('No network is allowed.'));
-  const submitted = accepted(FAL_THREE_D_MODEL, 'persisted-job');
+  const submitted = accepted(THREE_D_MODEL, 'persisted-job');
   let submissions = 0;
   const submissionProvider = createFalAssetProvider({
     apiKey: API_KEY,
     async fetch(url, init) {
-      assert.equal(String(url), `${BASE}/${FAL_THREE_D_MODEL}`);
+      assert.equal(String(url), `${BASE}/${THREE_D_MODEL}`);
       assert.equal(init.method, 'POST');
       submissions++;
       return json(submitted, 202);
     },
   });
   const started = await startAsset({
-    model: submissionProvider.threeD(), input: { prompt: 'A bronze lantern' },
+    model: submissionProvider.threeD(THREE_D_MODEL), input: { prompt: 'A bronze lantern' },
   });
   // Critical persistence is explicit application work, outside best-effort observation callbacks.
   const savedJSON = JSON.stringify(started.operation);
@@ -180,7 +181,7 @@ test('a fal job resumes through the real core from persisted JSON and a fresh pr
     },
   });
   const result = await waitForAsset({
-    model: resumedProvider.threeD(), operation: JSON.parse(savedJSON),
+    model: resumedProvider.threeD(THREE_D_MODEL), operation: JSON.parse(savedJSON),
     poll: { intervalMs: 0, delay: async () => {} }, retry,
   });
   assert.equal(submissions, 1);
@@ -204,7 +205,7 @@ test('a transient fal submission failure is not retried by the real core status 
     },
   });
   await assert.rejects(generateSoundEffect({
-    model: fal.soundEffect(), prompt: 'A short bell',
+    model: fal.soundEffect(SOUND_EFFECT_MODEL), input: { text: 'A short bell' },
     retry: { status: 5 },
     hooks: {
       onFinish() { terminals.push('finish'); },

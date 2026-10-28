@@ -39,8 +39,15 @@ export interface AssetModelV1Result {
   readonly assets: ReadonlyArray<AssetFile>;
   readonly warnings?: ReadonlyArray<SharedV4Warning>;
   readonly usage?: JSONObject;
+  /** Built-in adapters retain native output at providerMetadata.<provider>.output. */
   readonly providerMetadata?: SharedV4ProviderMetadata;
   readonly response?: AssetResponse;
+}
+
+/** Optional application-owned mappings. Without these, adapters use native JSON and common file references. */
+export interface AssetModelMapping<INPUT = JSONObject> {
+  readonly mapInput?: (input: INPUT) => JSONObject | PromiseLike<JSONObject>;
+  readonly mapResult?: (output: JSONValue) => AssetModelV1Result | PromiseLike<AssetModelV1Result>;
 }
 
 export interface AssetModelV1CallOptions<INPUT> {
@@ -118,4 +125,17 @@ export interface SoundEffectInput {
   readonly durationSeconds?: number;
   readonly promptInfluence?: number;
   readonly loop?: boolean;
+}
+
+export interface MusicInput {
+  readonly prompt: string;
+  readonly lyrics?: string;
+  readonly instrumental?: boolean;
+}
+
+export interface Animation3DInput {
+  readonly prompt: string;
+  readonly durationSeconds?: number;
+  readonly seed?: number;
+  readonly format?: 'fbx' | 'json';
 }
