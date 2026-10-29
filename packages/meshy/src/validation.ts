@@ -68,7 +68,8 @@ export function validateMeshyInput(route: string, input: JSONObject): void {
       input.action_ids.forEach(id => boundedNumber(id, 'action_id', 0, 32767, true));
     }
     if (input.post_process != null) {
-      const post = record(input.post_process, 'post_process'); nonempty(post.operation_type, 'operation_type');
+      const post = record(input.post_process, 'post_process');
+      if (post.operation_type !== undefined) nonempty(post.operation_type, 'operation_type');
       if (post.fps !== undefined) boundedNumber(post.fps, 'fps', 1, Infinity, true);
     }
   }

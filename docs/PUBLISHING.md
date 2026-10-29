@@ -1,6 +1,6 @@
 # Publishing `@sinestack/ai-*`
 
-SineStack AI publishes seven synchronized packages in topological dependency order:
+SineStack AI publishes eight synchronized packages in topological dependency order:
 
 1. `@sinestack/ai-provider` — versioned Asset/TaskDriver contracts, domain interfaces, results, operations, and optional mapping interfaces.
 2. `@sinestack/ai-provider-utils` — shared JSON/URL validation, transport helpers, and default asset result mapping.
@@ -9,6 +9,7 @@ SineStack AI publishes seven synchronized packages in topological dependency ord
 5. `@sinestack/ai-wavespeed` — WaveSpeed prediction adapter.
 6. `@sinestack/ai-replicate` — Replicate prediction adapter.
 7. `@sinestack/ai-tripo` — Tripo v3 generation, model processing, rigging, animation, and resource APIs.
+8. `@sinestack/ai-meshy` — Meshy generation, processing, analysis, rigging, motion, animation and resource APIs.
 
 ## Local Release Verification
 
@@ -20,9 +21,9 @@ npm run verify:release
 
 This command runs:
 
-- `npm run verify`: TypeScript project build, declaration and example typecheck, all unit/integration tests, offline verification of upstream `ai` / `@ai-sdk/*` versions and file hashes (`check:upstream`), and packing all seven workspaces into `artifacts/`.
-- `npm run test:packages`: verifies tarball integrity, installs the `.tgz` archives into an isolated temporary consumer outside the workspace, runs runtime smoke tests across all seven packages, and typechecks the installed `.d.ts` declarations. Tripo smoke tests cover generation, processing, checks, rigging, animation and task resume without real API calls.
-- `npm run release:dry-run`: validates version alignment, internal dependency specifiers, tarball contents, and runs `npm publish --dry-run` for all seven packages.
+- `npm run verify`: TypeScript project build, declaration and example typecheck, all unit/integration tests, offline verification of upstream `ai` / `@ai-sdk/*` versions and file hashes (`check:upstream`), and packing all eight workspaces into `artifacts/`.
+- `npm run test:packages`: verifies tarball integrity, installs the `.tgz` archives into an isolated temporary consumer outside the workspace, runs runtime smoke tests across all eight packages, and typechecks installed `.d.ts` declarations. Tripo covers generation, processing, checks, rigging, animation and resume; Meshy covers preview/refine, analysis, rigging, animation, motion, resume and DELETE without real API calls.
+- `npm run release:dry-run`: validates version alignment, internal dependency specifiers, tarball contents, and runs `npm publish --dry-run` for all eight packages.
 
 The npm CLI can reject a dry-run when that package version already exists. For verification of an
 already published source version, use a disposable worktree/CI checkout, stamp a unique unused
@@ -33,7 +34,7 @@ checks or treat a published version as overwriteable.
 
 ## Version Bumping
 
-All seven packages and `package-lock.json` must share the exact same version and internal `@sinestack/ai-*` dependency specifiers:
+All eight packages and `package-lock.json` must share the exact same version and internal `@sinestack/ai-*` dependency specifiers:
 
 ```bash
 npm run version:release -- <new-unpublished-version>
@@ -52,7 +53,7 @@ The [`.github/workflows/release.yml`](../.github/workflows/release.yml) workflow
   - **Repository**: `sinestack-ai`
   - **Workflow filename**: `release.yml`
   - **Environment name**: `npm`
-- The new `@sinestack/ai-tripo` package needs its own Trusted Publisher configuration before a real release; code changes do not create npm-side settings.
+- Each new provider package, including `@sinestack/ai-tripo` and `@sinestack/ai-meshy`, needs its own npm-side publishing setup before a real release; code changes do not create npm-side settings.
 - No long-lived publish token (`NPM_TOKEN`) is required; `NODE_AUTH_TOKEN` and `NPM_TOKEN` are cleared for `npm publish` so npm CLI (`>= 11.5.1`) uses GitHub OIDC.
 - If a multi-package release fails partway through and is re-triggered, `scripts/publish.mjs` compares the local tarball SHA-512 integrity against the registry (`dist.integrity`) and safely skips already-published packages with identical bytes while aborting on any integrity mismatch.
 

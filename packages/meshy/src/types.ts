@@ -136,7 +136,8 @@ export type MeshyRigInput = JSONObject & MeshyModelSource & {
   texture_image_url?: string;
 };
 export interface MeshyAnimationPostProcess extends JSONObject {
-  operation_type: 'change_fps' | 'fbx2usdz' | 'extract_armature' | (string & {});
+  /** Omission is valid: Meshy makes no extra post-processed file. */
+  operation_type?: 'change_fps' | 'fbx2usdz' | 'extract_armature' | (string & {});
   fps?: number;
 }
 export type MeshyAnimationInput = JSONObject & {
