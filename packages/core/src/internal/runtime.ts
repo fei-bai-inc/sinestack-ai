@@ -1,11 +1,11 @@
 /**
  * Shared execution mechanism extracted from the original asset executor.
  * Adapted from AI SDK 7.0.155 video orchestration. Copyright 2023 Vercel, Inc.
- * Copyright 2026 Sine AI contributors. SPDX-License-Identifier: Apache-2.0
+ * Copyright 2026 SineStack AI contributors. SPDX-License-Identifier: Apache-2.0
  * Domain results are opaque; retry, signals and callbacks delegate to AI SDK.
  */
 import { delay, generateId, withUserAgentSuffix } from '@ai-sdk/provider-utils';
-import type { AssetResponse, SharedV4ProviderOptions, SharedV4Warning, TaskCompletion, TaskDriver, TaskHandle, TaskStatus } from '@sine-ai/provider';
+import type { AssetResponse, SharedV4ProviderOptions, SharedV4Warning, TaskCompletion, TaskDriver, TaskHandle, TaskStatus } from '@sinestack/ai-provider';
 import type { AssetPollOptions } from '../types.js';
 import type { TaskEvent, TaskExecutionInfo, TaskExecutionOptions, TaskHooks, TaskPhase } from '../task-types.js';
 import { TaskAbortError, TaskExecutionError, TaskTimeoutError } from '../task-errors.js';
@@ -57,7 +57,7 @@ export async function execute<I, R, D extends string, OUT>(
   const ctx: RuntimeContext<I, R, D> = {
     driver, options, api, callId: `task_${generateId()}`,
     signal: mergeAbortSignals(options.abortSignal, options.timeoutMs) ?? new AbortController().signal,
-    headers: withUserAgentSuffix(options.headers ?? {}, 'sine-ai/0.1.0'), warnings: [], responses: [],
+    headers: withUserAgentSuffix(options.headers ?? {}, 'sinestack-ai/0.1.0'), warnings: [], responses: [],
     ...(task ? { task } : {}),
   };
   try {
@@ -88,7 +88,7 @@ export function submissionHeaders(headers: Record<string, string>) {
   const normalized = new Headers(headers);
   const existing = normalized.get('idempotency-key');
   if (existing !== null && !existing.trim()) throw new TypeError('idempotency-key must not be empty');
-  const idempotencyKey = existing ?? `sine_asset_${generateId()}`;
+  const idempotencyKey = existing ?? `sinestack_asset_${generateId()}`;
   normalized.set('idempotency-key', idempotencyKey);
   return { headers: Object.fromEntries(normalized.entries()), idempotencyKey };
 }

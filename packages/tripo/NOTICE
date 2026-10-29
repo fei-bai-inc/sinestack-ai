@@ -1,11 +1,11 @@
-Sine AI Tripo provider
-Copyright 2026 Sine AI contributors.
+SineStack AI Tripo provider
+Copyright 2026 SineStack AI contributors.
 Licensed under the Apache License, Version 2.0.
 
-This adapter uses Sine AI contracts and the shared transport which depend on
+This adapter uses SineStack AI contracts and the shared transport which depend on
 Vercel AI SDK (Copyright 2023 Vercel, Inc.; Apache-2.0).
 Provider methods perform single protocol operations. Retry, signal composition,
 callbacks and waiting belong to the shared core and pinned AI SDK helpers.
 The official Tripo documentation and SDK were used as protocol references;
 the official SDK's execution engine is not copied or embedded.
-https://github.com/fei-bai-inc/sine-ai
+https://github.com/fei-bai-inc/sinestack-ai

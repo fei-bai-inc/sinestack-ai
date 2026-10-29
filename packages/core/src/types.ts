@@ -1,7 +1,7 @@
 import type {
   AssetFile, AssetModelV1, AssetModelV1Result, AssetModelV1Status,
   AssetOperation, AssetResponse, SharedV4ProviderOptions,
-} from '@sine-ai/provider';
+} from '@sinestack/ai-provider';
 
 export type AssetPhase = 'generate' | 'start' | 'status' | 'cancel' | 'webhook' | 'wait';
 export type AssetAPI = 'generateAsset' | 'startAsset' | 'getAssetStatus' | 'waitForAsset' | 'cancelAsset';

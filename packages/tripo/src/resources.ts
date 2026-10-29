@@ -1,4 +1,4 @@
-import { httpURL, jsonObject } from '@sine-ai/provider-utils';
+import { httpURL, jsonObject } from '@sinestack/ai-provider-utils';
 import { TripoClient, taskId } from './client.js';
 import type { TripoRequestOptions } from './client.js';
 

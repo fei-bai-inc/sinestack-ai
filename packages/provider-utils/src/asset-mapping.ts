@@ -1,4 +1,4 @@
-import type { AssetModelMapping, JSONObject } from '@sine-ai/provider';
+import type { AssetModelMapping, JSONObject } from '@sinestack/ai-provider';
 
 /** Capture callable methods without dropping prototype methods or their original receiver. */
 export function snapshotAssetMapping<INPUT = JSONObject>(mapping?: AssetModelMapping<INPUT>): AssetModelMapping<INPUT> {

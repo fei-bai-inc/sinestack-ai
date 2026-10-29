@@ -2,9 +2,9 @@
 // Server-only Node.js example. Importing this file performs no network requests.
 // Call submit3DTask explicitly to create a billable job; the other functions reuse its handle.
 import process from 'node:process';
-import { cancelAsset, getAssetStatus, startAsset, waitForAsset } from '@sine-ai/core';
-import type { AssetOperation } from '@sine-ai/core';
-import { createFalAssetProvider } from '@sine-ai/fal';
+import { cancelAsset, getAssetStatus, startAsset, waitForAsset } from '@sinestack/ai-core';
+import type { AssetOperation } from '@sinestack/ai-core';
+import { createFalAssetProvider } from '@sinestack/ai-fal';
 
 /** Implement these with your existing SQL/KV/task store. Values are plain JSON strings. */
 export interface OperationStore {

@@ -1,16 +1,35 @@
 {
-  "name": "@sine-ai/wavespeed",
+  "name": "@sinestack/ai-wavespeed",
   "version": "0.1.0",
-  "description": "WaveSpeed prediction provider for Sine AI asset generation",
+  "description": "WaveSpeed prediction provider for SineStack AI asset generation",
   "type": "module",
   "license": "Apache-2.0",
   "sideEffects": false,
-  "files": ["dist", "src", "LICENSE", "NOTICE"],
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "engines": { "node": ">=22" },
-  "dependencies": {
-    "@sine-ai/provider": "0.1.0",
-    "@sine-ai/provider-utils": "0.1.0"
+  "files": [
+    "dist",
+    "src",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
-  "repository": { "type": "git", "url": "https://github.com/fei-bai-inc/sine-ai.git", "directory": "packages/wavespeed" }
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@sinestack/ai-provider": "0.1.0",
+    "@sinestack/ai-provider-utils": "0.1.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fei-bai-inc/sinestack-ai.git",
+    "directory": "packages/wavespeed"
+  }
 }

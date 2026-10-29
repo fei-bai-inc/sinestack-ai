@@ -1,6 +1,6 @@
-import type { AssetResponse, JSONObject, JSONValue } from '@sine-ai/provider';
-import { AssetProviderTransport, errorMessage, invalidResponse, jsonObject, jsonValue, record } from '@sine-ai/provider-utils';
-import type { AssetProviderResponse } from '@sine-ai/provider-utils';
+import type { AssetResponse, JSONObject, JSONValue } from '@sinestack/ai-provider';
+import { AssetProviderTransport, errorMessage, invalidResponse, jsonObject, jsonValue, record } from '@sinestack/ai-provider-utils';
+import type { AssetProviderResponse } from '@sinestack/ai-provider-utils';
 import type { TripoProviderSettings, TripoTaskRecord } from './types.js';
 
 export interface TripoRequestOptions { readonly abortSignal?: AbortSignal; readonly headers?: Record<string, string> }

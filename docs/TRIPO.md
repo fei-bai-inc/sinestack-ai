@@ -2,6 +2,7 @@
 
 Implemented against the public HTTP v3 documentation and official Python SDK v1.0.0,
 reviewed 2026-10-29. Mock contract coverage is not a claim of successful paid integration.
+The package is `@sinestack/ai-tripo`; domain and task entry points come from `@sinestack/ai-core`.
 
 ## Coverage
 
@@ -72,6 +73,8 @@ The public advanced APIs are startTask/getTaskStatus/waitForTask/cancelTask/dele
 returns `{ task, ...metadata }`; `waitForTask` returns `{ result, execution }`, preserving the driver
 result type. Each receipt has a distinct runtime marker, route/driver binding and optional connection
 identity. Pure handle validation happens before resumed hooks and authenticated I/O.
+The v1 wire discriminator `sine-ai-task` stays unchanged across the SineStack AI rename, so existing
+persisted receipts remain usable without data migration or new submissions.
 
 Submit defaults to zero retries; do not retry uncertain paid acceptance. Query retries only re-read
 the same task. Local abort/timeout never issues remote cancel or delete. Tripo has no verified remote
@@ -126,8 +129,11 @@ status; do not accept webhook output as authoritative generation output.
 Local/CI contract tests use fake HTTP responses and no API keys. Still to validate with a real account:
 all version/parameter combinations, image-to-depth, alternate four-view and batch-animation output
 shapes, Image-to-Image inputs-only behavior, Smart UV compression/version inconsistencies, binary
-model content/rig preservation, and Cloudflare/workerd deployment. No npm publish or automatic
-migration of consumer repositories is part of this change.
+model content/rig preservation, and Cloudflare/workerd deployment.
+
+The Tripo package participates in the seven-package release manifest, version stamping, archive
+validation and external consumer smoke tests. See [PUBLISHING.md](PUBLISHING.md). Release verification
+and npm dry-run do not publish packages or migrate any consumer repository.
 
 Sources: [Tripo SDK matrix](https://developers.tripo3d.ai/en/docs/sdk),
 [Task query](https://developers.tripo3d.ai/en/docs/task-query),

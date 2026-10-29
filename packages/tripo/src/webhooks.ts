@@ -1,5 +1,5 @@
-import type { JSONObject } from '@sine-ai/provider';
-import { jsonObject } from '@sine-ai/provider-utils';
+import type { JSONObject } from '@sinestack/ai-provider';
+import { jsonObject } from '@sinestack/ai-provider-utils';
 import { taskId } from './client.js';
 
 export interface TripoWebhookOptions {

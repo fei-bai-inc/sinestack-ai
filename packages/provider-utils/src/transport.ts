@@ -9,7 +9,7 @@ import {
   postFormDataToApi,
   type ResponseHandler,
 } from '@ai-sdk/provider-utils';
-import type { AssetModelV1OperationOptions, AssetResponse, JSONObject } from '@sine-ai/provider';
+import type { AssetModelV1OperationOptions, AssetResponse, JSONObject } from '@sinestack/ai-provider';
 import { errorMessage, httpURL, jsonObject } from './json.js';
 
 export interface AssetProviderTransportOptions {

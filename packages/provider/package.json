@@ -1,13 +1,34 @@
 {
-  "name": "@sine-ai/provider",
+  "name": "@sinestack/ai-provider",
   "version": "0.1.0",
-  "description": "Versioned, provider-neutral asset generation contracts for Sine AI",
+  "description": "Versioned, provider-neutral asset generation contracts for SineStack AI",
   "type": "module",
   "license": "Apache-2.0",
   "sideEffects": false,
-  "files": ["dist", "src", "LICENSE", "NOTICE"],
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "engines": { "node": ">=22" },
-  "dependencies": { "@ai-sdk/provider": "4.0.34" },
-  "repository": { "type": "git", "url": "https://github.com/fei-bai-inc/sine-ai.git", "directory": "packages/provider" }
+  "files": [
+    "dist",
+    "src",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "4.0.34"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fei-bai-inc/sinestack-ai.git",
+    "directory": "packages/provider"
+  }
 }

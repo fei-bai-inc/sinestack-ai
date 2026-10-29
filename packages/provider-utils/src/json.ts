@@ -1,4 +1,4 @@
-import type { JSONObject, JSONValue } from '@sine-ai/provider';
+import type { JSONObject, JSONValue } from '@sinestack/ai-provider';
 
 export function record(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {

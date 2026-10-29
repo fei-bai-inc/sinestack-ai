@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
-import { checkRigging, processModel3D, rigModel, animateModel, startTask, getTaskStatus, waitForTask, cancelTask, deleteTask, TaskExecutionError, TaskAbortError, generateAsset } from '@sine-ai/core';
+import { checkRigging, processModel3D, rigModel, animateModel, startTask, getTaskStatus, waitForTask, cancelTask, deleteTask, TaskExecutionError, TaskAbortError, generateAsset } from '@sinestack/ai-core';
 const poll = { intervalMs: 0, delay: async () => {} };
 function fixture(domain = 'model3d.rig.check', overrides = {}) {
   const calls = { start: 0, status: 0, cancel: 0, delete: 0 };

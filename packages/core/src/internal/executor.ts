@@ -1,9 +1,9 @@
 /**
  * Legacy Asset API boundary. The shared runtime owns ALL execution and polling.
- * Copyright 2023 Vercel, Inc. Copyright 2026 Sine AI contributors.
+ * Copyright 2023 Vercel, Inc. Copyright 2026 SineStack AI contributors.
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { AssetModelV1, AssetModelV1Result, AssetOperation, SharedV4ProviderOptions, TaskCompletion, TaskDriver, TaskHandle } from '@sine-ai/provider';
+import type { AssetModelV1, AssetModelV1Result, AssetOperation, SharedV4ProviderOptions, TaskCompletion, TaskDriver, TaskHandle } from '@sinestack/ai-provider';
 import { AssetAbortError, AssetExecutionError, AssetTimeoutError } from '../errors.js';
 import { TaskExecutionError } from '../task-errors.js';
 import type { AssetAPI, AssetEvent, AssetExecutionOptions, AssetPhase, AssetPollOptions, GenerateAssetResult, StartAssetResult } from '../types.js';
@@ -40,16 +40,16 @@ export async function execute<I, K extends string, OUT>(api: AssetAPI, model: As
     specificationVersion: 'v1', provider: model.provider, driverId: model.modelId, domain: model.kind,
     capabilities: { idempotentStart: model.capabilities?.idempotentStart,
       idempotentExecute: model.capabilities?.idempotentGenerate, webhooks: model.capabilities?.webhooks },
-    ...(model.doGenerate ? { doExecute: async (call: import('@sine-ai/provider').TaskCallOptions<I>) => completion(await model.doGenerate!(call)) } : {}),
-    ...(model.doStart ? { doStart: async (call: import('@sine-ai/provider').TaskCallOptions<I>) => {
+    ...(model.doGenerate ? { doExecute: async (call: import('@sinestack/ai-provider').TaskCallOptions<I>) => completion(await model.doGenerate!(call)) } : {}),
+    ...(model.doStart ? { doStart: async (call: import('@sinestack/ai-provider').TaskCallOptions<I>) => {
       const { operation, ...rest } = await model.doStart!(call); return { ...rest, handle: operation };
     } } : {}),
-    ...(model.doStatus ? { doStatus: async (call: import('@sine-ai/provider').TaskOperationOptions) => {
+    ...(model.doStatus ? { doStatus: async (call: import('@sinestack/ai-provider').TaskOperationOptions) => {
       const status = await model.doStatus!({ operation: call.handle, headers: call.headers, abortSignal: call.abortSignal });
       validateStatus(status);
       return status.status === 'completed' ? { ...status, ...completion(status.result) } : status;
     } } : {}),
-    ...(model.doCancel ? { doCancel: (call: import('@sine-ai/provider').TaskOperationOptions) => model.doCancel!({
+    ...(model.doCancel ? { doCancel: (call: import('@sinestack/ai-provider').TaskOperationOptions) => model.doCancel!({
       operation: call.handle, headers: call.headers, abortSignal: call.abortSignal,
     }) } : {}),
   };

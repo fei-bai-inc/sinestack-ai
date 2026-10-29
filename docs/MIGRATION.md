@@ -2,7 +2,7 @@
 
 这次调整以减少基础执行逻辑的长期维护为目标。项目尚未发布到 npm；已经按早期源码接入的调用方需要检查下列变化。
 
-基础机制现在集中通过 `internal/sdk.ts` 使用 AI SDK 的 `prepareRetries`、`mergeAbortSignals`、`mergeCallbacks`。core 的 `ai` peer dependency 精确锁定 `7.0.155`。资产 submit/status/poll/result/cancel 编排仍由 Sine AI 维护，不是上游新增了通用 Asset executor。
+基础机制现在集中通过 `internal/sdk.ts` 使用 AI SDK 的 `prepareRetries`、`mergeAbortSignals`、`mergeCallbacks`。core 的 `ai` peer dependency 精确锁定 `7.0.155`。资产 submit/status/poll/result/cancel 编排仍由 SineStack AI 维护，不是上游新增了通用 Asset executor。
 
 ## 删除或改变的部分
 
@@ -41,9 +41,9 @@ stage retry 次数、提交幂等能力检查、每次逻辑提交的稳定幂�
 
 ## Media provider 扩展后的变化
 
-新增 `@sine-ai/wavespeed`、`@sine-ai/replicate` 的通用资产协议，fal 同样采用通用模型入口；`AssetModelV1` 版本保持不变。四个能力 facade 都支持 `{ model, input }`，只校验 kind 并调用 `generateAsset`。连接和映射约定见 [MEDIA_PROVIDERS.md](MEDIA_PROVIDERS.md)。
+新增 `@sinestack/ai-wavespeed`、`@sinestack/ai-replicate` 的通用资产协议，fal 同样采用通用模型入口；`AssetModelV1` 版本保持不变。四个能力 facade 都支持 `{ model, input }`，只校验 kind 并调用 `generateAsset`。连接和映射约定见 [MEDIA_PROVIDERS.md](MEDIA_PROVIDERS.md)。
 
-fal HTTP 已转向共享 `@sine-ai/provider-utils`，与新 provider 一起复用 AI SDK 的公开 HTTP helpers。由此产生以下明确变化：
+fal HTTP 已转向共享 `@sinestack/ai-provider-utils`，与新 provider 一起复用 AI SDK 的公开 HTTP helpers。由此产生以下明确变化：
 
 - HTTP 409 按 SDK 的默认分类可重试。是否重试仍由 core 的阶段 retry 次数决定，提交默认依然为 0。
 - 未被 SDK 识别的自定义 fetch 异常保留原样，不再全部包装成可重试网络错误。SDK 识别的连接错误继续使用 SDK 的分类。

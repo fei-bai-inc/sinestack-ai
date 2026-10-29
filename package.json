@@ -1,16 +1,27 @@
 {
-  "name": "sine-ai-workspace",
+  "name": "sinestack-ai-workspace",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
-  "engines": { "node": ">=22" },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b && tsc -p tests/tsconfig.json --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs",
     "check": "npm run typecheck && npm test",
-    "check:upstream": "node scripts/check-upstream.mjs"
+    "check:upstream": "node scripts/check-upstream.mjs",
+    "pack:release": "npm run build && node scripts/pack.mjs",
+    "verify": "npm run check && npm run check:upstream && node scripts/pack.mjs",
+    "test:packages": "node scripts/smoke-packages.mjs",
+    "verify:release": "npm run verify && npm run test:packages && npm run release:dry-run",
+    "version:release": "node scripts/version.mjs",
+    "release:dry-run": "node scripts/publish.mjs --dry-run",
+    "release:publish": "node scripts/publish.mjs"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

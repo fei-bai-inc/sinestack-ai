@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHmac } from 'node:crypto';
 import { generateAsset, generate3D, startAsset, getAssetStatus, startTask, getTaskStatus, waitForTask,
-  processModel3D, checkRigging, rigModel, animateModel, cancelTask } from '@sine-ai/core';
-import { createTripoProvider, verifyTripoWebhook, TripoAPIError } from '@sine-ai/tripo';
+  processModel3D, checkRigging, rigModel, animateModel, cancelTask } from '@sinestack/ai-core';
+import { createTripoProvider, verifyTripoWebhook, TripoAPIError } from '@sinestack/ai-tripo';
 
 const BASE = 'https://openapi.tripo3d.ai/v3';
 const ID = '764cabcf-b745-4b3e-ae38-1200304cf45b';

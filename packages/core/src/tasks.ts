@@ -1,4 +1,4 @@
-import type { TaskCompletion, TaskDriver } from '@sine-ai/provider';
+import type { TaskCompletion, TaskDriver } from '@sinestack/ai-provider';
 import type { StartTaskOptions, TaskExecutionInfo, TaskOptions, TaskRunOptions, WaitForTaskOptions } from './task-types.js';
 import { TaskExecutionError } from './task-errors.js';
 import { attempt, completed, execute, observeNotification, query, submissionHeaders, submit, wait } from './internal/runtime.js';

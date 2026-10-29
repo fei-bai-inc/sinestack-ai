@@ -1,5 +1,5 @@
-import type { AssetModelMapping, AssetModelV1, AssetModelV1CallOptions, AssetModelV1OperationOptions, AssetModelV1Result, AssetModelV1Status, JSONObject, JSONValue, TaskCallOptions, TaskDriver, TaskOperationOptions, TaskStatus } from '@sine-ai/provider';
-import { errorMessage, jsonObject, jsonValue, snapshotAssetMapping } from '@sine-ai/provider-utils';
+import type { AssetModelMapping, AssetModelV1, AssetModelV1CallOptions, AssetModelV1OperationOptions, AssetModelV1Result, AssetModelV1Status, JSONObject, JSONValue, TaskCallOptions, TaskDriver, TaskOperationOptions, TaskStatus } from '@sinestack/ai-provider';
+import { errorMessage, jsonObject, jsonValue, snapshotAssetMapping } from '@sinestack/ai-provider-utils';
 import { TripoClient, taskId } from './client.js';
 import { assetResult } from './results.js';
 import { validateTripoInput } from './validation.js';

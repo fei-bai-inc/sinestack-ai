@@ -1,11 +1,12 @@
-# @sine-ai/tripo
+# @sinestack/ai-tripo
 
-Tripo HTTP v3 adapter for Sine AI. Native parameter types, independent semantic interfaces,
-one shared execution runtime. Source workspace package; not published by this change.
+Tripo HTTP v3 adapter for SineStack AI. Native parameter types, independent semantic interfaces,
+one shared execution runtime. Included in the synchronized `@sinestack/ai-*` release pipeline;
+adding this package to the repository does not itself publish it to npm.
 
 ```ts
-import { generate3D, processModel3D, checkRigging, rigModel, animateModel } from '@sine-ai/core';
-import { createTripoProvider } from '@sine-ai/tripo';
+import { generate3D, processModel3D, checkRigging, rigModel, animateModel } from '@sinestack/ai-core';
+import { createTripoProvider } from '@sinestack/ai-tripo';
 
 const tripo = createTripoProvider({ apiKey: process.env.TRIPO_API_KEY });
 const generated = await generate3D({

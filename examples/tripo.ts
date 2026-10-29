@@ -1,6 +1,6 @@
-import { generate3D, startTask, waitForTask, checkRigging, rigModel, animateModel } from '@sine-ai/core';
-import type { TaskHandle } from '@sine-ai/provider';
-import { createTripoProvider } from '@sine-ai/tripo';
+import { generate3D, startTask, waitForTask, checkRigging, rigModel, animateModel } from '@sinestack/ai-core';
+import type { TaskHandle } from '@sinestack/ai-provider';
+import { createTripoProvider } from '@sinestack/ai-tripo';
 
 /** Importing this module never creates a paid task. Call functions explicitly. */
 export async function generateTripoModel(modelId: string, prompt: string) {

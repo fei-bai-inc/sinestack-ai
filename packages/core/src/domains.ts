@@ -1,4 +1,4 @@
-import type { Model3DProcessor, ModelAnimator, ModelRigger, RigChecker, TaskDriver } from '@sine-ai/provider';
+import type { Model3DProcessor, ModelAnimator, ModelRigger, RigChecker, TaskDriver } from '@sinestack/ai-provider';
 import type { DomainResult, TaskRunOptions } from './task-types.js';
 import { runTask } from './tasks.js';
 

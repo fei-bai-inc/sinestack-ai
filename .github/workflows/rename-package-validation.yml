@@ -1,0 +1,24 @@
+# One-off verification for the repository rename; removed after evidence is collected.
+name: Verify renamed packages
+on:
+  push:
+    branches: [feat/tripo-domain-tasks]
+    paths: [.github/workflows/rename-package-validation.yml]
+permissions:
+  contents: read
+concurrency:
+  group: rename-package-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify archives, installed consumer, and publish dry-run
+        run: npm run verify:release

@@ -1,4 +1,4 @@
-import type { TaskHandle } from '@sine-ai/provider';
+import type { TaskHandle } from '@sinestack/ai-provider';
 import type { TaskPhase } from './task-types.js';
 
 export interface TaskErrorOptions { code?: string; cause?: unknown; phase?: TaskPhase; task?: TaskHandle }

@@ -56,6 +56,7 @@ export interface TaskDriver<INPUT, RESULT, DOMAIN extends string = string> {
 
 /** Persist the complete envelope and restore the original authorized connection. Never contains a key. */
 export interface TaskHandle<DOMAIN extends string = string> {
+  /** Stable v1 wire discriminator; retained across the SineStack AI package/repository rename. */
   readonly type: 'sine-ai-task';
   readonly specificationVersion: 'v1';
   readonly provider: string;

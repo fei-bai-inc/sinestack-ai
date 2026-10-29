@@ -1,4 +1,4 @@
-import type { AssetFile, AssetModelMapping, JSONObject, JSONValue } from '@sine-ai/provider';
+import type { AssetFile, AssetModelMapping, JSONObject, JSONValue } from '@sinestack/ai-provider';
 
 /** Known values provide completion hints, not a model/version allowlist. */
 export type OpenString<T extends string> = T | (string & {});

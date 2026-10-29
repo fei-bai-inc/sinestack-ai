@@ -1,4 +1,4 @@
-import type { TaskDriver, TaskHandle, TaskStatus } from '@sine-ai/provider';
+import type { TaskDriver, TaskHandle, TaskStatus } from '@sinestack/ai-provider';
 import type { AssetPollOptions } from '../types.js';
 import { milliseconds, snapshotJSONValue } from './validation.js';
 

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
-import { cancelAsset, getAssetStatus, startAsset, waitForAsset } from '@sine-ai/core';
-import { createWaveSpeedAssetProvider, WaveSpeedAssetModel } from '@sine-ai/wavespeed';
+import { cancelAsset, getAssetStatus, startAsset, waitForAsset } from '@sinestack/ai-core';
+import { createWaveSpeedAssetProvider, WaveSpeedAssetModel } from '@sinestack/ai-wavespeed';
 
 const MUSIC_MODEL = 'future-org/music-generation/v42';
 const THREE_D_MODEL = 'future-org/shapes/v42/text-to-mesh';
@@ -46,7 +46,7 @@ function scripted(...steps) {
 
 test('WaveSpeed submits once, retaining the full model path and configured credentials', async () => {
   const wire = scripted(json(prediction(), 200, { 'x-request-id': ID }));
-  const provider = createWaveSpeedAssetProvider({ apiKey: 'private-token', fetch: wire.fetch, headers: { 'x-client': 'sine' }, name: 'tenant-wave' });
+  const provider = createWaveSpeedAssetProvider({ apiKey: 'private-token', fetch: wire.fetch, headers: { 'x-client': 'sinestack' }, name: 'tenant-wave' });
   const model = provider.threeD(THREE_D_MODEL);
   const options = startOptions(undefined, {
     providerOptions: { wavespeed: { texture: true, geometry_quality: 'detailed', face_limit: 50_000, model_seed: 7 } },
@@ -64,7 +64,7 @@ test('WaveSpeed submits once, retaining the full model path and configured crede
   assert.equal(call.signal, options.abortSignal);
   assert.equal(call.redirect, 'error');
   assert.equal(call.headers.get('authorization'), 'Bearer private-token');
-  assert.equal(call.headers.get('x-client'), 'sine');
+  assert.equal(call.headers.get('x-client'), 'sinestack');
   assert.equal(call.headers.get('x-call'), 'start');
   assert.equal(call.headers.get('idempotency-key'), null);
   assert.deepEqual(JSON.parse(call.body), { prompt: 'A blue sculpture', texture: true, geometry_quality: 'detailed', face_limit: 50_000, model_seed: 7 });

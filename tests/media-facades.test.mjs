@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { generateAnimation3D, generateMusic, generate3D, generateSoundEffect } from '@sine-ai/core';
+import { generateAnimation3D, generateMusic, generate3D, generateSoundEffect } from '@sinestack/ai-core';
 
 for (const [kind, generate] of [
   ['music', generateMusic], ['animation-3d', generateAnimation3D],

@@ -16,7 +16,7 @@ import {
   materializeAsset,
   startAsset,
   waitForAsset,
-} from '@sine-ai/core';
+} from '@sinestack/ai-core';
 
 const TEST_TIMEOUT = 3_000;
 const fastPoll = { intervalMs: 0 };

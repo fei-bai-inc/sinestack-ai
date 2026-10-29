@@ -1,4 +1,4 @@
-import type { AssetResponse, SharedV4ProviderOptions, SharedV4Warning, TaskDriver, TaskHandle, TaskMetadata } from '@sine-ai/provider';
+import type { AssetResponse, SharedV4ProviderOptions, SharedV4Warning, TaskDriver, TaskHandle, TaskMetadata } from '@sinestack/ai-provider';
 import type { AssetPollOptions } from './types.js';
 
 export type TaskPhase = 'execute' | 'start' | 'status' | 'cancel' | 'delete' | 'webhook' | 'wait';

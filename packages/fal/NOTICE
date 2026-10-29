@@ -1,16 +1,16 @@
-Sine AI fal provider
-Copyright 2026 Sine AI contributors.
+SineStack AI fal provider
+Copyright 2026 SineStack AI contributors.
 Licensed under the Apache License, Version 2.0.
 
-This package uses @sine-ai/provider asset contracts, which are adapted
+This package uses @sinestack/ai-provider asset contracts, which are adapted
 from Vercel AI SDK's VideoModelV4:
 Copyright 2023 Vercel, Inc.
 https://github.com/vercel/ai
 Licensed under the Apache License, Version 2.0.
 
 The @ai-sdk/provider and @ai-sdk/provider-utils dependencies retain their
-own copyright and license notices. The fal adapter implements the Sine AI
-single-operation provider contract. Asset polling belongs to @sine-ai/core;
+own copyright and license notices. The fal adapter implements the SineStack AI
+single-operation provider contract. Asset polling belongs to @sinestack/ai-core;
 retry, signal composition, and callback behavior delegate to AI SDK helpers.
 
-https://github.com/fei-bai-inc/sine-ai
+https://github.com/fei-bai-inc/sinestack-ai

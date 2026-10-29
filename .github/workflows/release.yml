@@ -1,0 +1,110 @@
+name: Publish npm packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional exact semver version to stamp into the release job before packing
+        required: false
+        type: string
+      access:
+        description: npm package access level
+        required: false
+        default: public
+        type: choice
+        options:
+          - public
+          - restricted
+      tag:
+        description: npm dist-tag
+        required: false
+        default: latest
+        type: string
+      dry_run:
+        description: Validate and run npm publish --dry-run without publishing to npm
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Verify, pack, and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm
+    steps:
+      - name: Ensure release branch
+        if: ${{ !inputs.dry_run && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "Real npm releases must run from refs/heads/main; got ${GITHUB_REF}." >&2
+          exit 1
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Ensure npm supports OIDC trusted publishing
+        run: |
+          node -e '
+            const { execFileSync } = require("node:child_process");
+            const raw = execFileSync("npm", ["--version"], { encoding: "utf8" }).trim();
+            const [major = 0, minor = 0, patch = 0] = raw.split(".").map((part) => Number.parseInt(part, 10));
+            const supported = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)));
+            if (!supported) {
+              console.error(`npm >= 11.5.1 is required for OIDC trusted publishing; found ${raw}.`);
+              process.exit(1);
+            }
+            console.log(`Using npm ${raw} with OIDC trusted publishing support.`);
+          '
+
+      - name: Set release version
+        if: ${{ inputs.version != '' }}
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: npm run version:release -- "$RELEASE_VERSION"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify build, typecheck, tests, and upstream hashes
+        run: npm run verify
+
+      - name: Pack tarballs and smoke test external consumer
+        run: npm run test:packages
+
+      - name: Upload packed tarballs
+        uses: actions/upload-artifact@v7
+        with:
+          name: sinestack-ai-npm-packages
+          path: artifacts/*.tgz
+          if-no-files-found: error
+
+      - name: Publish npm packages
+        env:
+          NODE_AUTH_TOKEN: ''
+          NPM_TOKEN: ''
+          NPM_READ_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          NPM_ACCESS: ${{ inputs.access }}
+          NPM_TAG: ${{ inputs.tag }}
+          NPM_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(--access "$NPM_ACCESS" --tag "$NPM_TAG")
+          if [ -n "$RELEASE_VERSION" ]; then
+            args+=(--expect-version "$RELEASE_VERSION" --allow-version-dirty)
+          fi
+          if [ "$NPM_DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          npm run release:publish -- "${args[@]}"

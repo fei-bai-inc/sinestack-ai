@@ -1,4 +1,4 @@
-import type { AssetModelMapping, JSONObject } from '@sine-ai/provider';
+import type { AssetModelMapping, JSONObject } from '@sinestack/ai-provider';
 import { TripoClient } from './client.js';
 import { TripoAssetModel, TripoTaskDriver } from './driver.js';
 import { animationResult, modelResult, rigCheckResult, rigResult, segmentResult, smartSegmentResult, uvResult } from './results.js';

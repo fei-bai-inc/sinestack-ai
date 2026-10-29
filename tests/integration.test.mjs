@@ -3,8 +3,8 @@ import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
 import {
   generate3D, generateSoundEffect, startAsset, waitForAsset,
-} from '@sine-ai/core';
-import { createFalAssetProvider } from '@sine-ai/fal';
+} from '@sinestack/ai-core';
+import { createFalAssetProvider } from '@sinestack/ai-fal';
 
 const BASE = 'https://queue.fal.run';
 const API_KEY = 'fake-integration-key';
@@ -69,7 +69,7 @@ for (const scenario of cases) {
       assert.equal(init.redirect, 'error');
       assert.ok(init.signal instanceof AbortSignal);
       assert.equal(headers.get('authorization'), `Key ${API_KEY}`);
-      assert.match(headers.get('user-agent'), /sine-ai\/0\.1\.0/);
+      assert.match(headers.get('user-agent'), /sinestack-ai\/0\.1\.0/);
       if (call.method === 'POST') {
         assert.equal(startHookSettled, true, 'The shared onStart hook must finish before submitting.');
         assert.equal(call.url, `${BASE}/${scenario.modelId}`);

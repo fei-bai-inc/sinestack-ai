@@ -1,4 +1,4 @@
-import type { AssetFile, AssetModelV1Result, JSONObject, JSONValue } from '@sine-ai/provider';
+import type { AssetFile, AssetModelV1Result, JSONObject, JSONValue } from '@sinestack/ai-provider';
 import { httpURL, jsonValue } from './json.js';
 
 // File formats, not a model catalog. Unknown formats remain opaque file references.

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
-import { startAsset, getAssetStatus } from '@sine-ai/core';
-import { createFalAssetProvider, FalAssetModel } from '@sine-ai/fal';
+import { startAsset, getAssetStatus } from '@sinestack/ai-core';
+import { createFalAssetProvider, FalAssetModel } from '@sinestack/ai-fal';
 
 const MUSIC_MODEL = 'future-org/music-engine/v99';
 const ANIMATION_3D_MODEL = 'future-org/motion-engine/v99';

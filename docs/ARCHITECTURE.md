@@ -1,6 +1,6 @@
 # 领域接口与共享执行机制
 
-Sine AI 的统一边界是**执行机制**，不是所有业务语义。生成、模型处理、检查、骨骼和动画可以使用不同的输入、调用入口及结果结构，通过同一个泛型 runtime 运行。仅仅都是异步 HTTP 请求或都返回 GLB，不意味着应该共用一个业务结果类型。
+SineStack AI 的统一边界是**执行机制**，不是所有业务语义。生成、模型处理、检查、骨骼和动画可以使用不同的输入、调用入口及结果结构，通过同一个泛型 runtime 运行。仅仅都是异步 HTTP 请求或都返回 GLB，不意味着应该共用一个业务结果类型。
 
 本项目仍维护必要的 submit/status/poll/result/cancel 编排；重试策略、signal 合并和 callback 分发直接交给 AI SDK。这不是上游现成的通用 Asset executor，也不将 3D 数据伪装成 video 以调用私有函数。
 
@@ -38,7 +38,7 @@ runtime -> TaskDriver 单次执行方法 -> provider HTTP / 原生结果解码
 | Callback await 与忽略错误 | AI SDK mergeCallbacks。 |
 | Delay、ID、HTTP/JSON handlers、字节转换 | @ai-sdk/provider-utils 公开 helpers。 |
 | 显式下载与内存文件 | ai createDownload、DefaultGeneratedFile。 |
-| 领域协议、receipt 与任务编排 | Sine AI 自有代码。 |
+| 领域协议、receipt 与任务编排 | SineStack AI 自有代码。 |
 
 唯一的内部依赖入口为 [internal/sdk.ts](../packages/core/src/internal/sdk.ts)：
 
@@ -77,7 +77,7 @@ TaskDriver 提供 `doExecute`，或者完整的 `doStart/doStatus`，也可以�
 
 ## 提交、恢复与身份
 
-新 TaskHandle 使用 `type: 'sine-ai-task'` 与 v1 标记，绑定 provider、driverId、domain、可选 modelId/connectionId，并保留已知 submittedAt 和 opaque JSON handle。driverId 用于稳定路由和恢复，不是调用方必须记忆的全局业务操作目录。
+TaskHandle 使用 `type: 'sine-ai-task'` 与 v1 标记，绑定 provider、driverId、domain、可选 modelId/connectionId，并保留已知 submittedAt 和 opaque JSON handle。这个持久化协议标记刻意保持稳定，不随 SineStack AI 包名和仓库地址变化；不要对数据库中的任务凭据做品牌字符串替换。driverId 用于稳定路由和恢复，不是调用方必须记忆的全局业务操作目录。
 
 新 receipt 的完整 JSON 信封在访问字段前检查 descriptor；提交/恢复建立深冻结快照。恢复的 driver.validateHandle 在 hooks 和认证 I/O 前运行。Tripo 校验原 baseURL、原生 route、model、connection 与安全 task ID，不接受响应中任意 URL 作为带凭据的目标。
 
@@ -117,6 +117,8 @@ AssetFile 可以是 URL、binary、base64。URL 默认不下载，materializeAss
 
 Tripo import/check/rig/retarget 和 Meshy 风格 preview/refine 均按独立阶段保存与恢复。检查引用不天然是模型资源，task ID 也不能跨供应商直接使用。隐式工作流如果将来提供，需要有明确的各阶段状态和持久化边界，不能冒充单个远端提交。
 
-Node 22/24 CI 包括旧 provider 回归、新领域运行与类型测试、Tripo 所有 20 个端点的 mock 契约、上传/通知安全及 Meshy 风格 fixture。它们不证明真实 API 权限、所有模型版本组合和二进制资产内容正确。Meshy adapter、真实计费联调、Cloudflare/workerd 验证、SSE 与持久化调度器均不能据此宣称已完成。
+Node 22/24 CI 包括旧 provider 回归、新领域运行与类型测试、Tripo 所有 20 个端点的 mock 契约、上传/通知安全及 Meshy 风格 fixture。发布验证还会在工作区之外安装七个 `@sinestack/ai-*` tarball，检查公开声明与运行调用。版本脚本更新公共 runtime 的 User-Agent，不再修改仅作兼容层的 executor。
 
-详见 [Tripo 实现与联调边界](TRIPO.md)、[聚合 provider](MEDIA_PROVIDERS.md)、[上游精确基线](UPSTREAM.md) 和 [历史迁移](MIGRATION.md)。
+这些测试不证明真实 API 权限、所有模型版本组合和二进制资产内容正确。Meshy adapter、真实计费联调、Cloudflare/workerd 验证、SSE 与持久化调度器均不能据此宣称已完成。
+
+详见 [Tripo 实现与联调边界](TRIPO.md)、[聚合 provider](MEDIA_PROVIDERS.md)、[发布](PUBLISHING.md)、[上游精确基线](UPSTREAM.md) 和 [历史迁移](MIGRATION.md)。

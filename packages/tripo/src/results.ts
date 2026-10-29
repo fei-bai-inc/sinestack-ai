@@ -1,5 +1,5 @@
-import type { AssetFile, AssetModelV1Result, JSONObject, JSONValue } from '@sine-ai/provider';
-import { httpURL, jsonObject, mapAssetResult } from '@sine-ai/provider-utils';
+import type { AssetFile, AssetModelV1Result, JSONObject, JSONValue } from '@sinestack/ai-provider';
+import { httpURL, jsonObject, mapAssetResult } from '@sinestack/ai-provider-utils';
 import type { TripoAnimationResult, TripoModelResult, TripoRigCheckResult, TripoRigResult, TripoSegmentResult, TripoSmartSegmentResult, TripoTaskRecord, TripoUVResult } from './types.js';
 
 /** Only these provider output fields are files. Do not scan arbitrary metadata or prose. */

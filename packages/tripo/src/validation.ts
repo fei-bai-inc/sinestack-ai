@@ -1,5 +1,5 @@
-import type { JSONObject } from '@sine-ai/provider';
-import { record } from '@sine-ai/provider-utils';
+import type { JSONObject } from '@sinestack/ai-provider';
+import { record } from '@sinestack/ai-provider-utils';
 const views = ['front', 'left', 'back', 'right'];
 function text(value: unknown, label: string): void {
   if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${label} must be a nonempty string`);

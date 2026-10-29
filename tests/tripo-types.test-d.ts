@@ -1,8 +1,8 @@
-import { generate3D, generateAsset, checkRigging, processModel3D, rigModel, animateModel, startTask, getTaskStatus, waitForTask } from '@sine-ai/core';
-import type { DomainResult, GenerateAssetResult } from '@sine-ai/core';
-import type { AssetFile, Model3DProcessor, RigChecker, TaskHandle } from '@sine-ai/provider';
-import { createTripoProvider } from '@sine-ai/tripo';
-import type { TripoRigCheckResult, TripoModelResult, TripoSegmentResult, TripoAnimationResult } from '@sine-ai/tripo';
+import { generate3D, generateAsset, checkRigging, processModel3D, rigModel, animateModel, startTask, getTaskStatus, waitForTask } from '@sinestack/ai-core';
+import type { DomainResult, GenerateAssetResult } from '@sinestack/ai-core';
+import type { AssetFile, Model3DProcessor, RigChecker, TaskHandle } from '@sinestack/ai-provider';
+import { createTripoProvider } from '@sinestack/ai-tripo';
+import type { TripoRigCheckResult, TripoModelResult, TripoSegmentResult, TripoAnimationResult } from '@sinestack/ai-tripo';
 declare function expectType<T>(value: T): void;
 const tripo = createTripoProvider();
 const text = tripo.textTo3D('future-native-version');

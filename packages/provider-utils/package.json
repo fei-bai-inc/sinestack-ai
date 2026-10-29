@@ -1,17 +1,36 @@
 {
-  "name": "@sine-ai/provider-utils",
+  "name": "@sinestack/ai-provider-utils",
   "version": "0.1.0",
-  "description": "Thin JSON and AI SDK HTTP utilities for Sine AI asset adapters",
+  "description": "Thin JSON and AI SDK HTTP utilities for SineStack AI asset adapters",
   "type": "module",
   "license": "Apache-2.0",
   "sideEffects": false,
-  "files": ["dist", "src", "LICENSE", "NOTICE"],
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "engines": { "node": ">=22" },
+  "files": [
+    "dist",
+    "src",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
-    "@sine-ai/provider": "0.1.0",
+    "@sinestack/ai-provider": "0.1.0",
     "@ai-sdk/provider": "4.0.34",
     "@ai-sdk/provider-utils": "5.0.70"
   },
-  "repository": { "type": "git", "url": "https://github.com/fei-bai-inc/sine-ai.git", "directory": "packages/provider-utils" }
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fei-bai-inc/sinestack-ai.git",
+    "directory": "packages/provider-utils"
+  }
 }

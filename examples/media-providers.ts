@@ -1,8 +1,8 @@
-import { generateAsset } from '@sine-ai/core';
-import type { JSONObject } from '@sine-ai/provider';
-import { createFalAssetProvider } from '@sine-ai/fal';
-import { createReplicateAssetProvider } from '@sine-ai/replicate';
-import { createWaveSpeedAssetProvider } from '@sine-ai/wavespeed';
+import { generateAsset } from '@sinestack/ai-core';
+import type { JSONObject } from '@sinestack/ai-provider';
+import { createFalAssetProvider } from '@sinestack/ai-fal';
+import { createReplicateAssetProvider } from '@sinestack/ai-replicate';
+import { createWaveSpeedAssetProvider } from '@sinestack/ai-wavespeed';
 
 // No model catalog or implicit model selection. Calling without arguments performs no generation.
 // node --experimental-strip-types examples/media-providers.ts fal music owner/model '{"native_field":"value"}'
