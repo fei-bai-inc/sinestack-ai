@@ -76,13 +76,16 @@ export interface AssetModelV1StartResult {
 export type AssetModelV1Status =
   | { readonly status: 'pending' | 'running'; readonly progress?: number; readonly message?: string; readonly providerMetadata?: SharedV4ProviderMetadata }
   | { readonly status: 'completed'; readonly result: AssetModelV1Result }
-  | { readonly status: 'failed'; readonly error: { readonly message: string; readonly code?: string } }
-  | { readonly status: 'cancelled'; readonly message?: string };
+  | { readonly status: 'failed'; readonly error: { readonly message: string; readonly code?: string };
+      readonly response?: AssetResponse; readonly providerMetadata?: SharedV4ProviderMetadata }
+  | { readonly status: 'cancelled'; readonly message?: string;
+      readonly response?: AssetResponse; readonly providerMetadata?: SharedV4ProviderMetadata };
 
 export interface AssetModelV1CancelResult {
   /** An acknowledged cancellation request is not proof that remote work has stopped. */
   readonly status: 'requested' | 'cancelled';
   readonly response?: AssetResponse;
+  readonly providerMetadata?: SharedV4ProviderMetadata;
 }
 
 /**

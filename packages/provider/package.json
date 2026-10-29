@@ -1,6 +1,6 @@
 {
   "name": "@sinestack/ai-provider",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Versioned, provider-neutral asset generation contracts for SineStack AI",
   "type": "module",
   "license": "Apache-2.0",

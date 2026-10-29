@@ -48,6 +48,8 @@ export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 
 依赖仍精确锁定 ai@7.0.155；没有增加一套退避、Retry-After 或通用 abort 引擎。GET、JSON POST、multipart POST 使用公开 SDK helpers。fal 取消所需 PUT、Meshy 删除所需 DELETE 使用同一个受限目的地的单次 fetch 与 SDK response handlers；DELETE 可显式接受空 HTTP 200/204，生成响应仍要求有效 JSON。Tripo signed storage PUT 是不携带 API 凭证的独立上传，不进入认证 transport。
 
+响应 handlers 可以按请求替换，默认行为保持。Viggle 使用局部 lossless JSON decoder 将不安全整数字面量保留为精确字符串；原生 retryable 与 retry_after_ms 传给既有 SDK 错误/重试机制。requestRaw 共享相同认证、地址约束与 signal，可交付单次 SSE 流或原始重定向响应，绝不跟随 Location。Viggle 的 signed PUT 也不继承 API 凭证。
+
 ## 独立语义与结果
 
 既有 `AssetModelV1<INPUT,KIND>` 继续承载文件生成，`generateAsset` 保证非空 assets 和非可选 asset。音乐、音效、3D 等 facade 只约束 kind，保留原生输入。fal/WaveSpeed/Replicate 仍不维护模型目录，也不强迫所有模型使用一个参数 schema。
@@ -76,6 +78,8 @@ TaskDriver 提供 `doExecute`，或者完整的 `doStart/doStatus`，也可以�
 
 动作目录、余额等普通同步资源查询直接调用请求工具，不制造 task ID 和 pending 状态。Meshy 的独立 motion 走已有资产生成接口；打印分析定义独立分析语义，并复用同一执行机制。本轮没有建立通用 DAG 系统，也没有为了接入 Meshy 修改 runtime。
 
+Viggle 使用独立工厂区分 H3 模式、角色动画、Render、图片、视频处理、角色/动作资源和场景阶段。19 个能力入口组合同一个 ViggleTaskDriver；ViggleAssetModel 只转换资产契约。角色资源就绪不强制输出文件，独立动作保留全部三套 rig，场景结果保留 session、batch、camera、SPZ 与 manifest 原生字段。无自动付费阶段串联。
+
 ## 提交、恢复与身份
 
 TaskHandle 使用 `type: 'sine-ai-task'` 与 v1 标记，绑定 provider、driverId、domain、可选 modelId/connectionId，并保留已知 submittedAt 和 opaque JSON handle。这个持久化协议标记刻意保持稳定，不随 SineStack AI 包名和仓库地址变化；不要对数据库中的任务凭据做品牌字符串替换。driverId 用于稳定路由和恢复，不是调用方必须记忆的全局业务操作目录。
@@ -102,7 +106,7 @@ Meshy 普通 DELETE 是移除任务及产物，不是取消运行中的任务。
 
 ## Webhook 边界
 
-旧 Asset submission webhook factory 及“通知后仍非终态则错误”的行为保持。新任务可提供一个已经认证、关联好的 notification，收到后查询同一任务；查询尚未终态则继续轮询。通知丢失会消耗等待预算，因此交付不可靠时优先普通轮询。本轮没有 SSE/watch 实现。
+旧 Asset submission webhook factory 及“通知后仍非终态则错误”的行为保持。新任务可提供一个已经认证、关联好的 notification，收到后查询同一任务；查询尚未终态则继续轮询。通知丢失会消耗等待预算，因此交付不可靠时优先普通轮询。Viggle Render events 通过 eventsource-parser 解析单次 SSE，支持 Last-Event-ID，但不自动重连，不拥有第二套执行内核；通用 watch 尚未实现。
 
 Tripo 使用账户级订阅，不声明提交级 callback 能力。verifyTripoWebhook 使用 Web Crypto 验证原始字节与时间窗，返回签名 event.id 作为去重键。宿主应根据可信路由解析 connection，使用可信 endpoint ID，原子保存 connection + event.id 和 outbox。unsigned delivery headers 不能充当已认证的去重身份。
 
@@ -116,14 +120,18 @@ Webhook 只唤醒已登记任务的权威查询，不直接接纳其中的生成
 
 原有输入推导、kind 检查、hooks 字段和时机、幂等门及凭据快照保持。Task 与 Asset 的错误/receipt 转换仅存在于兼容边界，不污染通用 runtime 或 provider。
 
+failed/cancelled 状态与终态错误可携带 response/providerMetadata；runtime 和 Asset 兼容转换将原始诊断传递到调用方及 onError，保留 cause、阶段、code 和 receipt。HTTP 200 内的业务失败因此仍可查到供应商 request_id、details 与 remediation。
+
 ## 文件、多阶段与验证
 
 AssetFile 可以是 URL、binary、base64。URL 默认不下载，materializeAsset 是显式独立阶段。长期文件保存、下载网络策略和字节上限由应用控制。URL 失效不应触发重新生成收费任务。
 
 Tripo import/check/rig/retarget 和 Meshy preview/refine 均按独立阶段保存与恢复。检查引用不天然是模型资源，task ID 也不能跨供应商直接使用。隐式工作流如果将来提供，需要有明确的各阶段状态和持久化边界，不能冒充单个远端提交。
 
-Node 22/24 CI 包括旧 provider 回归、各领域运行与类型测试、Tripo 20 个操作与 Meshy 18 个能力的 mock 契约、恢复、上传/通知安全。发布验证还会在工作区之外安装八个 `@sinestack/ai-*` tarball，检查公开声明与运行调用。版本脚本更新公共 runtime 的 User-Agent，不再修改仅作兼容层的 executor。
+Node 22/24 CI 包括旧 provider 回归、各领域运行与类型测试、Tripo 20 个操作、Meshy 18 个能力与 Viggle 19 个能力的 mock 契约、恢复、上传/通知安全。发布验证还会在工作区之外安装九个 `@sinestack/ai-*` tarball，检查公开声明与运行调用。版本脚本更新公共 runtime 的 User-Agent，不再修改仅作兼容层的 executor。
 
-这些测试不证明真实 API 权限、所有模型版本组合和二进制资产内容正确。真实计费联调、Cloudflare/workerd 验证、Creative Lab、SSE 与持久化调度器均不能据此宣称已完成。
+Viggle 另在真实 workerd 中执行任务恢复、精确 seed、multipart、SSE 与签名 PUT 用例，未启用 nodejs_compat，使用注入的 mock fetch。底层请求使用 workerd 支持的 manual 重定向模式，并由认证 transport 默认拒绝 3xx；signed PUT 也显式拒绝跳转。可复现用例见 [Worker 验证](../tests/workerd/README.md)。
 
-详见 [Tripo](TRIPO.md)、[Meshy 实现与联调边界](MESHY.md)、[聚合 provider](MEDIA_PROVIDERS.md)、[发布](PUBLISHING.md)、[上游精确基线](UPSTREAM.md) 和 [历史迁移](MIGRATION.md)。
+这些测试不证明真实 API 权限、所有模型版本组合和二进制资产内容正确，也不代表已部署到 Cloudflare。真实计费联调、Creative Lab、通用 watch 与持久化调度器仍有各自独立的验收边界。
+
+详见 [Tripo](TRIPO.md)、[Meshy 实现与联调边界](MESHY.md)、[Viggle 实现与联调边界](VIGGLE.md)、[聚合 provider](MEDIA_PROVIDERS.md)、[发布](PUBLISHING.md)、[上游精确基线](UPSTREAM.md) 和 [历史迁移](MIGRATION.md)。

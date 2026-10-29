@@ -20,6 +20,8 @@ import { createReplicateAssetProvider } from '@sinestack/ai-replicate';
 import { createWaveSpeedAssetProvider } from '@sinestack/ai-wavespeed';
 import { createTripoProvider } from '@sinestack/ai-tripo';
 import type { TripoRigCheckResult } from '@sinestack/ai-tripo';
+import { createViggleProvider } from '@sinestack/ai-viggle';
+import type { ViggleCharacterInput, ViggleMotionTextInput, ViggleMotion3DVideoInput, ViggleSceneCreateInput, ViggleSceneGenerateInput, ViggleSceneTask, ViggleMatrix4 } from '@sinestack/ai-viggle';
 
 const fal = createFalAssetProvider({ apiKey: 'test' });
 const wavespeed = createWaveSpeedAssetProvider({ apiKey: 'test' });
@@ -83,4 +85,40 @@ export async function typecheckTripoConsumer(): Promise<DomainResult<TripoRigChe
   // @ts-expect-error Sharing a runtime must not erase semantic domain boundaries.
   void rigModel({ rigger: model, input: { input: 'source-task' } });
   return checkRigging({ checker: model, input: { input: 'source-task' } });
+}
+
+/** Public Viggle declarations must work from an installed tarball, including Blob input. */
+export async function typecheckViggleConsumer(): Promise<ViggleSceneTask> {
+  const viggle = createViggleProvider({ apiKey: 'test', connectionId: 'installed-types' });
+  const characterInput: ViggleCharacterInput = { type: 'vsplat', enhance_prompt: 'A dancer' };
+  const character = await startTask({ model: viggle.createCharacter(), input: characterInput });
+  const characterResult = await waitForTask({ model: viggle.createCharacter(), task: character.task });
+  const characterId: string = characterResult.result.id;
+  await viggle.characters.export(characterId, 'vsplat');
+  await viggle.characters.create({ image: new Blob(['image']), type: 'all', model: 'future-model', joint_set: 'full', scale_parts: { arms: 1.1 } });
+
+  const motionInput: ViggleMotionTextInput = { text: 'Walk', duration_seconds: 5, smooth: true };
+  await generateAnimation3D({ model: viggle.textToMotion({ format: 'fbx' }), input: motionInput });
+  const videoInput: ViggleMotion3DVideoInput = { motion_video: new Blob(['video']), target_fps: 30 };
+  await generateAnimation3D({ model: viggle.videoToMotion(), input: videoInput });
+
+  await generateAsset({ model: viggle.image(), input: { prompt: 'A poster', reference_image: new Blob(['image']) } });
+  await generateAsset({ model: viggle.textToVideo(), input: { prompt: 'A forest', quality: 'low', seed: '9223372036854775807' } });
+  const sceneInput: ViggleSceneCreateInput = { sessionId: 'room', prompt: 'A studio', referenceImageFiles: [new Blob(['image'])] };
+  const sceneModel = viggle.createScene();
+  const sceneStart = await startTask({ model: sceneModel, input: sceneInput });
+  const saved: TaskHandle<'scene.create'> = sceneStart.task;
+  const ready = await waitForTask({ model: sceneModel, task: saved });
+  const scene: ViggleSceneTask = ready.result;
+  const camera: ViggleMatrix4 = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]];
+  const next: ViggleSceneGenerateInput = { sessionId: 'room', referenceBatchIds: ['10000000-0000-0000-0000-000000000001'], targetC2w: camera };
+  await startTask({ model: viggle.generateSceneViews(), input: next });
+  await viggle.scenes.customPanorama({ sessionId: 'room', panorama: new Blob(['pano']), panoramaC2w: camera, metersPerUnit: 1 });
+  // @ts-expect-error Character render requests still require an image source.
+  await viggle.characters.create({ type: 'render' });
+  // @ts-expect-error A motion file facade cannot silently request a combined all resource.
+  await generateAnimation3D({ model: viggle.videoToMotion(), input: { motion_video_url: 'https://assets.example/video.mp4', type: 'all' } });
+  // @ts-expect-error Scene operations cannot be substituted for model rigging.
+  await rigModel({ rigger: sceneModel, input: sceneInput });
+  return scene;
 }

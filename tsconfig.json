@@ -8,6 +8,7 @@
     { "path": "packages/wavespeed" },
     { "path": "packages/replicate" },
     { "path": "packages/tripo" },
-    { "path": "packages/meshy" }
+    { "path": "packages/meshy" },
+    { "path": "packages/viggle" }
   ]
 }

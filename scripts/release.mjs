@@ -16,6 +16,7 @@ export const packageDirectories = [
   'replicate',
   'tripo',
   'meshy',
+  'viggle',
 ];
 export const artifacts = join(repository, 'artifacts');
 

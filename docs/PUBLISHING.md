@@ -1,6 +1,6 @@
 # Publishing `@sinestack/ai-*`
 
-The eight packages have **independent versions**. Only changed packages are published, in dependency order: `@sinestack/ai-provider`, `@sinestack/ai-provider-utils`, `@sinestack/ai-core`, `@sinestack/ai-fal`, `@sinestack/ai-wavespeed`, `@sinestack/ai-replicate`, `@sinestack/ai-tripo`, and `@sinestack/ai-meshy`. An unchanged package keeps its own version and its existing exact dependency pins, even when a newer dependency exists.
+The nine packages have **independent versions**. Only changed packages are published, in dependency order: `@sinestack/ai-provider`, `@sinestack/ai-provider-utils`, `@sinestack/ai-core`, `@sinestack/ai-fal`, `@sinestack/ai-wavespeed`, `@sinestack/ai-replicate`, `@sinestack/ai-tripo`, `@sinestack/ai-meshy`, and `@sinestack/ai-viggle`. An unchanged package keeps its own version and its existing exact dependency pins, even when a newer dependency exists.
 
 ## Pull request and version rules
 
@@ -45,4 +45,4 @@ npm run check:release-version -- origin/main
 npm run verify:release
 ```
 
-The first check compares the current tree with fetched `origin/main`. `verify:release` builds and typechecks, runs tests and upstream checks, packs all eight workspaces, installs them into an isolated consumer and executes that consumer, including Tripo and Meshy. It does not publish. To dry-run unpublished changed packages, use `npm run release:dry-run -- --base-ref origin/main` after `verify:release`; it queries npm and may require authentication for private packages. Actual publish uses the committed `main` tree and OIDC.
+The first check compares the current tree with fetched `origin/main`. `verify:release` builds and typechecks, runs tests and upstream checks, packs all nine workspaces, installs them into an isolated consumer and executes that consumer, including Tripo, Meshy, and Viggle. It does not publish. To dry-run unpublished changed packages, use `npm run release:dry-run -- --base-ref origin/main` after `verify:release`; it queries npm and may require authentication for private packages. Actual publish uses the committed `main` tree and OIDC.

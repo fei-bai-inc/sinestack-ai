@@ -69,7 +69,7 @@ for (const scenario of cases) {
       assert.equal(init.redirect, 'error');
       assert.ok(init.signal instanceof AbortSignal);
       assert.equal(headers.get('authorization'), `Key ${API_KEY}`);
-      assert.match(headers.get('user-agent'), /sinestack-ai\/0\.1\.2/);
+      assert.match(headers.get('user-agent'), /sinestack-ai\/0\.1\.3/);
       if (call.method === 'POST') {
         assert.equal(startHookSettled, true, 'The shared onStart hook must finish before submitting.');
         assert.equal(call.url, `${BASE}/${scenario.modelId}`);
