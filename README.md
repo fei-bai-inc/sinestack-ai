@@ -1,27 +1,28 @@
 # Sine AI
 
-基于 **Vercel AI SDK 7** 扩展的 TypeScript 资产生成 SDK。3D、音效、音乐、3D 动作、文档及自定义资产类型共用 `AssetModelV1`，通过同一套生成、提交、查询、等待和取消接口执行。
+基于 **Vercel AI SDK 7** 扩展的 TypeScript 资产生成与处理 SDK。
 
-**Provider adapter 实现平台协议，不维护模型目录。** fal、WaveSpeed、Replicate 的所有入口都接受显式模型 ID；没有默认模型、型号白名单或针对某个模型的固定参数 schema。新增同协议模型无需登记到 SDK 或更新 SDK。
+**领域接口分别设计，任务生命周期与执行引擎共用。** 生成 3D、音乐、音效等保留资产接口；模型处理、骨骼检查、绑定和角色动画使用各自的输入与结果。调用方不必使用全局操作字符串，也不必把无文件的检查结果包装成资产。
 
-重试策略、AbortSignal 合并和 callback 分发直接复用 AI SDK。资产协议所需的 submit/status/poll/result/cancel 编排仍由 Sine AI 维护；上游当前没有可直接接入 `AssetModelV1` 的通用 executor。
+重试策略、AbortSignal 合并和 callback 分发直接复用 AI SDK。submit/status/poll/result/cancel 编排仍由 Sine AI 维护；这不是上游现成的通用 Asset executor。
 
 ## 包与维护边界
 
 | 包 | 职责 |
 |---|---|
-| `@sine-ai/provider` | 版本化资产协议、结果、operation 和可选的外部映射接口。 |
-| `@sine-ai/core` | 唯一的资产编排、按 kind 的薄入口、恢复和显式文件物化。 |
-| `@sine-ai/provider-utils` | 共享 JSON/连接校验、默认文件解析；HTTP 请求和响应处理委托给 AI SDK 公开 helpers。 |
-| `@sine-ai/fal` | fal queue 的提交、查询、结果获取、取消协议。 |
-| `@sine-ai/wavespeed` | WaveSpeed prediction 的提交和查询协议。 |
-| `@sine-ai/replicate` | Replicate prediction 的提交、查询、取消和固定版本协议。 |
+| `@sine-ai/provider` | 既有 Asset 协议、通用 TaskDriver、领域契约、文件与任务凭据。 |
+| `@sine-ai/core` | 唯一执行内核、领域入口、旧 Asset 兼容边界、恢复和显式文件物化。 |
+| `@sine-ai/provider-utils` | JSON/连接校验、常见文件解析、基于 AI SDK 的单次 HTTP 工具。 |
+| `@sine-ai/fal` | fal queue 提交、查询、结果和取消；无模型目录。 |
+| `@sine-ai/wavespeed` | WaveSpeed prediction 提交和查询；无模型目录。 |
+| `@sine-ai/replicate` | Replicate prediction、固定版本及取消；无模型目录。 |
+| `@sine-ai/tripo` | Tripo v3 生成、Model Processing、检查、骨骼、动画及辅助资源。 |
 
-每个 adapter 方法只完成一次 provider 操作，不增加自己的 polling、重试、abort 或 hook 执行机制。kind 入口只标记资产类型，不选择模型，也不推断远端模型能力。
+Provider 方法只完成一次协议操作，不添加自己的 polling、重试、abort 或 hook 引擎。模型版本保持开放，不设 SDK 型号白名单。Meshy 尚未提供真实 adapter；现有对照 fixture 用于验证其结果和多阶段任务能使用公共执行机制。
 
 ## 从源码使用
 
-**这些包尚未发布到 npm。** 当前通过仓库的 npm workspaces 使用，需要 Node.js 22 或 24：
+这些包尚未通过本次改动发布到 npm。通过仓库 npm workspaces 使用，需要 Node.js 22 或 24：
 
 ```sh
 git clone https://github.com/fei-bai-inc/sine-ai.git
@@ -30,179 +31,170 @@ npm ci
 npm run build
 ```
 
-无需 key 或网络的本地 document 示例：
+无 key、无网络的本地文件生成示例：
 
 ```sh
 node --experimental-strip-types examples/custom-provider.ts
 ```
 
-## 显式模型 ID 与原生 input
+## 生成：显式模型 ID 与原生 input
 
-三个 provider 提供相同的入口：
+fal、WaveSpeed、Replicate 提供相同的资产工厂：
 
 ```ts
-provider.music(modelId);
-provider.threeD(modelId);
-provider.soundEffect(modelId);
-provider.animation3D(modelId);
-provider.asset(modelId, { kind: 'document' });
+provider.music(modelId, mapping?);
+provider.threeD(modelId, mapping?);
+provider.soundEffect(modelId, mapping?);
+provider.animation3D(modelId, mapping?);
+provider.asset(modelId, { kind, mapInput?, mapResult? });
 ```
 
-调用方选择平台上实际存在、接受相应任务的模型，并按该模型的原生 schema 提供 `input`。SDK 校验 JSON 与协议字段，不把一个模型的参数规则套在整类能力上。
+它们只设置资产 kind，原样传递模型原生 JSON，不把某个模型的 schema 强加给整个平台。调用方负责选择实际存在的模型及其参数。
 
 ```ts
-import { generateMusic, generate3D, generateAsset } from '@sine-ai/core';
-import type { JSONObject } from '@sine-ai/provider';
-import { createFalAssetProvider } from '@sine-ai/fal';
+import { generate3D } from '@sine-ai/core';
 import { createWaveSpeedAssetProvider } from '@sine-ai/wavespeed';
-import { createReplicateAssetProvider } from '@sine-ai/replicate';
 
-const fal = createFalAssetProvider();
 const wavespeed = createWaveSpeedAssetProvider();
-const replicate = createReplicateAssetProvider();
+const modelId = process.env.THREE_D_MODEL_ID;
+if (!modelId) throw new Error('Set THREE_D_MODEL_ID');
 
-// modelId 与原生 input 来自应用配置；SDK 不需要预先知道该模型。
-async function createMusic(modelId: string, input: JSONObject) {
-  return generateMusic({ model: fal.music(modelId), input });
+const result = await generate3D({
+  model: wavespeed.threeD(modelId),
+  input: { prompt: 'A wooden lantern' }, // 使用所选模型要求的原生字段。
+});
+console.log(result.asset, result.assets);
+```
+
+`generateMusic`、`generate3D`、`generateSoundEffect`、`generateAnimation3D` 是按 kind 约束的薄入口，均进入 `generateAsset`。旧平铺字段重载仍保留并标记 deprecated，仅用于明确接收这些字段的外部 mapper 或自定义模型。
+
+`providerOptions.<provider>` 可以补充原生参数，不能覆盖 input 或 mapInput 已提供的同名字段。无需为同协议的新模型更新 SDK。
+
+## 处理、检查、骨骼与动画：不同语义，同一执行内核
+
+```ts
+import { processModel3D, checkRigging, rigModel, animateModel } from '@sine-ai/core';
+import { createTripoProvider } from '@sine-ai/tripo';
+
+const tripo = createTripoProvider(); // 服务端 TRIPO_API_KEY。
+
+async function animateCharacter(originalModelTaskId: string, rigVersion: string, preset: string) {
+  const report = await checkRigging({
+    checker: tripo.rigCheck(),
+    input: { input: originalModelTaskId },
+  });
+  if (!report.riggable) return { report }; // 检测正常完成，不是远端执行失败。
+
+  const rigged = await rigModel({
+    rigger: tripo.rig(rigVersion),
+    input: { input: originalModelTaskId, rig_type: 'biped' },
+  });
+  const animated = await animateModel({
+    animator: tripo.retarget(),
+    input: { input: rigged.taskId, animation: preset },
+  });
+  return { report, rigged, animated };
 }
 
-async function createThreeD(modelId: string, input: JSONObject) {
-  return generate3D({ model: wavespeed.threeD(modelId), input });
-}
-
-async function createDocument(modelId: string, input: JSONObject) {
-  return generateAsset({
-    model: replicate.asset(modelId, { kind: 'document' }),
-    input,
+async function textureModel(sourceTaskId: string, textureVersion: string) {
+  return processModel3D({
+    processor: tripo.texture(textureVersion),
+    input: { input: sourceTaskId, texture_prompt: { text: 'painted wood' } },
   });
 }
 ```
 
-`generateMusic`、`generate3D`、`generateSoundEffect`、`generateAnimation3D` 的原生输入形式只检查 kind，然后调用 `generateAsset`。参数不会被裁剪或悄悄改名。例如模型要求 `text`、`is_instrumental` 或 `duration`，就直接在 input 中使用这些字段。
+这些调用会创建实际任务；上面的组合示意不替代生产系统的逐阶段持久化。Rig 使用原模型，不使用 Rig Check 的任务 ID；Retarget 使用 Rig 的任务 ID。
 
-`providerOptions.fal / wavespeed / replicate` 可以补充原生参数，但不能覆盖 input 或 `mapInput` 已提供的同名字段。推荐把模型输入放在 `input`，避免重复定义。
+处理结果有模型、部件、预览或报告；检查直接返回 `riggable`；动画保留实际文件与供应商报告的 clip 信息。字段由具体能力类型推导，不是一份全局大 union。公共执行器不理解这些业务字段。
 
-## 外部实现、按需注入映射
-
-`mapInput` 和 `mapResult` 都是可选、可独立替换的函数。缺省时原样提交原生 JSON，并使用共享的常见文件解析器。
-
-映射既可以是普通对象，也可以是外部包实现的类实例。创建 model 时会保存方法引用并绑定原实例，因此原型方法、`this` 和私有字段都可正常使用。
-
-应用需要统一业务输入或处理特殊输出时，自行提供映射：
-
-```ts
-import { generateMusic } from '@sine-ai/core';
-import type { AssetModelMapping } from '@sine-ai/provider';
-
-interface SongRequest {
-  description: string;
-  seconds: number;
-}
-
-// 可由任意外部包导出，再注入连接；不需要修改 provider 或 executor。
-const mapping: AssetModelMapping<SongRequest> = {
-  mapInput(input) {
-    return { text: input.description, duration: input.seconds };
-  },
-};
-
-const model = fal.music<SongRequest>('your-owner/your-music-model', mapping);
-
-const result = await generateMusic({
-  model,
-  input: { description: 'A calm piano score', seconds: 120 },
-});
-```
-
-特殊结果 schema 可以单独注入 `mapResult`。它收到平台的原生 output，必须返回真实文件的非空 `assets`；结果的任务身份、原生输出快照仍由 adapter 保留。完整示例与默认解析边界见 [Media providers](docs/MEDIA_PROVIDERS.md)。
-
-## 文件与原生结果
-
-结果提供：
-
-- `result.asset`：首个文件。
-- `result.assets`：全部标准化文件。
-- `result.providerMetadata.<provider>.output`：独立保留的原生输出快照。
-
-默认解析支持根 URL、URL 数组、显式 `{ url, content_type?, file_name?, file_size? }` 文件对象，以及嵌套文件对象和常见文件列表。它不会扫描文本中的链接，也不会把任意 metadata 字符串当文件。未知结构通过 `mapResult` 扩展，未知文件格式保守使用 `application/octet-stream`。
-
-URL 默认保留引用，不隐式下载。需要 bytes 时：
-
-```ts
-import { materializeAsset } from '@sine-ai/core';
-
-const file = await materializeAsset(result.asset, {
-  maxBytes: 64 * 1024 * 1024,
-});
-```
-
-物化默认上限 64 MiB。生成与下载是独立阶段；自定义 downloader 负责自己的网络策略、大小限制和 AbortSignal 响应。
+Tripo 共实现 20 个业务操作入口与 6 个辅助 API，包含全部生成、Model Processing/Import、Rig Check/Rig/Retarget，以及任务、上传、余额和用量。完整范围、参数及验证边界见 [Tripo 文档](docs/TRIPO.md)。
 
 ## 提交、持久化与恢复
 
+资产 API 的原用法保持：
+
 ```ts
-import { startAsset, getAssetStatus, waitForAsset, cancelAsset } from '@sine-ai/core';
-
-const model = fal.threeD('your-owner/your-geometry-model');
-const started = await startAsset({
-  model,
-  input: { prompt: 'A wooden lantern' },
-});
-
-// 由应用保存整个 operation，以及对应的原连接 ID。
-// await store.put(taskId, JSON.stringify(started.operation));
-
-const status = await getAssetStatus({ model, operation: started.operation });
+const started = await startAsset({ model, input });
+await saveOperation(started.operation);
 const result = await waitForAsset({ model, operation: started.operation });
 ```
 
-恢复会检查版本、provider、modelId、kind 和 provider operation 中的任务身份/API 地址。查询失败不会再次提交。operation 不保存密钥；应用仍需恢复原租户、账号与连接。
+新领域任务使用公共生命周期入口：
 
-远端取消通过 `cancelAsset` 显式发出。`requested` 表示接受取消请求，`cancelled` 表示已观察到确认。本地 abort 不会自动取消远端任务。WaveSpeed 没有已验证的远端取消协议，因此不暴露该能力。
+```ts
+import { startTask, getTaskStatus, waitForTask } from '@sine-ai/core';
 
-关键持久化应在 `startAsset` 返回后显式 await。观测 hook 的错误不会使提交失败，也不能承担必须成功的事务步骤。
+const model = tripo.rig(selectedRigVersion);
+const started = await startTask({ model, input: { input: originalModelTaskId } });
+await saveTask(started.task);
 
-## 连接与 webhook
+const status = await getTaskStatus({ model, task: started.task });
+const completed = await waitForTask({ model, task: started.task });
+console.log(completed.result); // 保留该能力的精确结果类型。
+```
 
-| Provider | 默认 baseURL | 默认环境变量 |
+示例中的模型、输入、版本、源任务和持久化方法由应用提供。`startTask` 只提交；`getTaskStatus` 只观察一次；`waitForTask` 不重新提交。`cancelTask` 和 `deleteTask` 分别表示远端取消、删除，不与本地 abort 混用。驱动不支持的能力在请求前报错。
+
+持久化失败时保留已返回的 handle，补写或恢复，不能因保存失败重复创建计费任务。每个阶段独立保存。hooks 是观察回调，不承担必须成功的业务事务。
+
+新任务凭据有独立运行时标记，并绑定 provider、driver、domain、可选 model/connection；旧 Asset receipt 继续接受。恢复需要原授权账号与连接。凭据不保存 API key，也不能替代租户鉴权。跨供应商资源传递需要显式保存/上传文件，不能互传原生 task ID。
+
+## 可选外部映射与文件
+
+资产的 `mapInput`、`mapResult` 可以分别提供，也支持外部类实例及其原型方法：
+
+```ts
+const model = wavespeed.threeD<{ description: string }>('your-provider/your-model', {
+  mapInput: input => ({ prompt: input.description }),
+});
+```
+
+默认输出映射识别常见 URL、文件数组和显式文件对象，不扫描 prose 或任意 metadata 字符串。特殊输出可以注入 mapResult。Tripo 使用自身端点输出解码，并保留完整原生结果；可扩展的 `TripoTaskDriver` 接受类型化输入映射及结果 decoder。
+
+旧资产结果保持非空 `assets`、非可选 `asset` 和原生 `providerMetadata.<provider>.output`。新领域结果不强制有文件，公共执行记录位于 `execution`。模型、UV、mask、多视图、动画文件不会因为一个“主文件”而被丢弃。
+
+URL 默认不下载。需要 bytes 时显式使用：
+
+```ts
+import { materializeAsset } from '@sine-ai/core';
+const file = await materializeAsset(result.asset, { maxBytes: 64 * 1024 * 1024 });
+```
+
+生成与下载是独立失败边界。持久化文件由应用负责，不应把临时 URL 当永久地址。自定义 downloader 负责网络限制、最大体积及 AbortSignal 响应。
+
+## 连接、安全与执行约定
+
+| Provider | 默认 baseURL | 环境变量 |
 |---|---|---|
 | fal | `https://queue.fal.run` | `FAL_KEY` |
 | WaveSpeed | `https://api.wavespeed.ai/api/v3` | `WAVESPEED_API_KEY` |
 | Replicate | `https://api.replicate.com/v1` | `REPLICATE_API_TOKEN` |
+| Tripo | `https://openapi.tripo3d.ai/v3` | `TRIPO_API_KEY` |
 
-连接支持 `apiKey`、`baseURL`、`headers`、`fetch`、`name`，配置会复制保存。调用级 headers 不能覆盖实际认证，带凭证的请求拒绝重定向。
+连接支持 apiKey/baseURL/headers/fetch/name，Tripo 额外支持 connectionId。配置会复制保存；实际认证不能被调用级 headers 覆盖。带凭证请求拒绝重定向；自定义 fetch 也应遵守该限制。签名存储上传独立执行，不能继承 API key 或连接 header。
 
-`startAsset` 可传 `webhookUrl`；`generateAsset` 可传 `webhook: () => ({ url, received })`。接收端负责认证、关联与去重，再 resolve 通知；core 随后查询原 operation 取得结果。通知不会导致新提交。
+提交和直接执行默认不重试；正数重试要求明确远端幂等保障。状态读取默认重试两次，由 AI SDK 决定错误分类、退避与 Retry-After。远端 failed/cancelled 不触发重新生成。
 
-## 执行语义
+普通轮询首次立即查询，默认间隔 2 秒、等待超时 10 分钟。超时与 abort 是合作式信号，不能强制终止忽略信号的 Promise 或挂起的 hook。本地中止不会自动取消远端任务。
 
-| 项目 | 约定 |
-|---|---|
-| 提交/直接生成 retry | 默认 0；正数需要模型明确声明远端幂等。三个远端 adapter 均不声明提交幂等。 |
-| Status retry | 默认 2，由 SDK 实现退避、错误分类和 Retry-After；不重新创建任务。 |
-| Polling | 首次查询立即进行，之后默认每 2 秒一次；等待默认 10 分钟 timeout signal。 |
-| Timeout / abort | SDK 合并信号，采用合作式取消；不会强行结束忽略信号的 provider 或挂起 hook。 |
-| Hooks | 五个观测事件：onStart、onOperation、onProgress、onFinish、onError；SDK await 并忽略 callback 错误。 |
-| 文件 | 保持引用，显式物化；没有后台存储、数据库或持久化调度器。 |
+五个 hooks 为 onStart/onOperation/onProgress/onFinish/onError，均 await 且忽略回调错误。鉴权、关键持久化和业务事务放在它们之外。
 
-`@sine-ai/provider-utils` 复用 AI SDK 的 GET/POST 与 response handlers，不维护另一套 retry policy。fal PUT 取消没有上游公开请求 helper，因此保留一次薄 fetch，并复用相同 SDK response handlers。
+Tripo 使用账户级 webhook 订阅，不伪造提交级 callback URL。验签、签名 event ID 去重键、宿主事务/outbox 和任务查询关联详见 [TRIPO.md](docs/TRIPO.md)。SSE/watch 和持久化调度器尚未实现。
 
-## 开发与示例
+## 开发与验证
 
 ```sh
 npm run check
 npm run check:upstream
-node --experimental-strip-types examples/media-providers.ts
 ```
 
-`check` 包含类型、构建和 mock 测试。`check:upstream` 离线核对 3 个上游包的精确版本、许可证和 19 项源文件 hash。CI 使用 Node.js 22/24，不自动发布。
+`check` 包括类型、构建和 mock 契约测试；CI 使用 Node 22/24。`check:upstream` 离线检查 3 个精确上游包和 19 项源码 hash，不联网更新基线。测试不调用真实计费 API，不证明供应商账号权限、所有版本参数组合或二进制模型内容正确；Cloudflare/workerd 运行验证尚未完成。
 
-[media-providers.ts](examples/media-providers.ts) 接受 provider、kind、modelId、原生 JSON；不传参数只打印用法。[generate-assets.ts](examples/generate-assets.ts) 展示应用显式选择实际模型，[submit-and-resume.ts](examples/submit-and-resume.ts) 展示外部持久化。示例里的模型选择不构成 SDK 支持清单。
-
-测试不调用真实计费 API；尚未完成 Cloudflare/workerd 验证。
+示例：[自定义 provider](examples/custom-provider.ts)、[聚合平台](examples/media-providers.ts)、[资产恢复](examples/submit-and-resume.ts)、[Tripo](examples/tripo.ts)。
 
 ## 上游与许可证
 
-基线为 `ai@7.0.155`、`@ai-sdk/provider@4.0.34`、`@ai-sdk/provider-utils@5.0.70`。core 的 `ai` peer dependency 精确锁定；internal 导入集中在 `packages/core/src/internal/sdk.ts`，升级需审阅。
+基线 `ai@7.0.155`、`@ai-sdk/provider@4.0.34`、`@ai-sdk/provider-utils@5.0.70`。内部导入集中在 `packages/core/src/internal/sdk.ts`，core 的 ai peer 精确锁定；升级需要审阅，不另行维护 SDK 的基础 retry/abort 实现。
 
-项目采用 Apache-2.0，保留 Vercel 与 Sine AI 的归属。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE)、[UPSTREAM.md](docs/UPSTREAM.md)、[ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [迁移说明](docs/MIGRATION.md)。
+Apache-2.0，保留 Vercel 和 Sine AI 归属。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE)、[上游](docs/UPSTREAM.md)、[架构](docs/ARCHITECTURE.md)、[Media providers](docs/MEDIA_PROVIDERS.md) 和 [历史迁移说明](docs/MIGRATION.md)。
