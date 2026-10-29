@@ -1,5 +1,5 @@
 import type { TaskCompletion, TaskDriver } from '@sine-ai/provider';
-import type { StartTaskOptions, TaskOptions, TaskRunOptions, WaitForTaskOptions } from './task-types.js';
+import type { StartTaskOptions, TaskExecutionInfo, TaskOptions, TaskRunOptions, WaitForTaskOptions } from './task-types.js';
 import { TaskExecutionError } from './task-errors.js';
 import { attempt, completed, execute, observeNotification, query, submissionHeaders, submit, wait } from './internal/runtime.js';
 import { validatePoll } from './internal/task-validation.js';
@@ -41,7 +41,7 @@ export function deleteTask<I, R, D extends string>(options: TaskOptions<I, R, D>
   }, options.task);
 }
 /** Internal entry for domain facades, not a mandatory public Operation API. */
-export function runTask<I, R, D extends string>(api: string, model: TaskDriver<I, R, D>, options: Omit<TaskRunOptions<I, R, D>, 'model'>) {
+export function runTask<I, R, D extends string, OUT>(api: string, model: TaskDriver<I, R, D>, options: Omit<TaskRunOptions<I, R, D>, 'model'>, finalize: (value: { result: R; execution: TaskExecutionInfo<D> }) => OUT): Promise<OUT> {
   const notification = options.notification ? observeNotification(options.notification) : undefined;
   return execute(api, model, options, async ctx => {
     validatePoll(options.poll);
@@ -59,6 +59,6 @@ export function runTask<I, R, D extends string>(api: string, model: TaskDriver<I
       result = await attempt(ctx, 'execute', ctx.signal, () => model.doExecute!({ input: options.input,
         providerOptions: options.providerOptions ?? {}, abortSignal: ctx.signal, ...submission, headers: { ...submission.headers } }));
     }
-    return completed(ctx, result);
+    return finalize(completed(ctx, result));
   });
 }

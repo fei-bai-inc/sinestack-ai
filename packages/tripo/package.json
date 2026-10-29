@@ -1,0 +1,13 @@
+{
+  "name": "@sine-ai/tripo",
+  "version": "0.1.0",
+  "description": "Tripo v3 generation, model processing, rigging and animation provider for Sine AI",
+  "type": "module",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "files": ["dist", "src", "LICENSE", "NOTICE"],
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "engines": { "node": ">=22" },
+  "dependencies": { "@sine-ai/provider": "0.1.0", "@sine-ai/provider-utils": "0.1.0" },
+  "repository": { "type": "git", "url": "https://github.com/fei-bai-inc/sine-ai.git", "directory": "packages/tripo" }
+}
