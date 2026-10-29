@@ -201,7 +201,7 @@ npm run check:upstream
 node --experimental-strip-types examples/media-providers.ts
 ```
 
-`check` 包含类型、构建和 mock 测试。`check:upstream` 离线核对 3 个上游包的精确版本、许可证和 19 项源文件 hash。CI 使用 Node.js 22/24，不自动发布。
+`check` 包含类型、构建和 mock 测试。`check:upstream` 离线核对 3 个上游包的精确版本、许可证和 19 项源文件 hash。CI 使用 Node.js 22/24；PR 合入 `main` 后只发布发生变更的 npm 包，独立版本与合入规则见 [PUBLISHING.md](docs/PUBLISHING.md)。
 
 [media-providers.ts](examples/media-providers.ts) 接受 provider、kind、modelId、原生 JSON；不传参数只打印用法。[generate-assets.ts](examples/generate-assets.ts) 展示应用显式选择实际模型，[submit-and-resume.ts](examples/submit-and-resume.ts) 展示外部持久化。示例里的模型选择不构成 SDK 支持清单。
 

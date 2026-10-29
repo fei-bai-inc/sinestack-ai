@@ -5,44 +5,17 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
   artifacts,
-  packageDirectories,
   readRelease,
   registry,
   repository,
   sourceIdentity,
 } from './release.mjs';
+import { checkReleaseVersion, compareStableVersions } from './version-policy.mjs';
 
-export const ALLOWED_VERSION_DIRTY_PATHS = new Set([
-  'package.json',
-  'package-lock.json',
-  ...packageDirectories.map(name => `packages/${name}/package.json`),
-  'packages/core/src/internal/executor.ts',
-  'tests/integration.test.mjs',
-]);
-
-export function assertDirtyStatusAllowed(statusOutput, allowVersionDirty) {
-  const lines = statusOutput
-    .split('\n')
-    .map(line => line.trimEnd())
-    .filter(Boolean);
-  if (lines.length === 0) {
-    return;
-  }
+function assertDirtyStatusAllowed(statusOutput) {
   assert(
-    allowVersionDirty,
-    `Commit all source changes and regenerate the release before publishing:\n${lines.join('\n')}`,
-  );
-  const disallowed = [];
-  for (const line of lines) {
-    const filePath = line.slice(3).trim();
-    if (line.startsWith('??') || !ALLOWED_VERSION_DIRTY_PATHS.has(filePath)) {
-      disallowed.push(line);
-    }
-  }
-  assert.equal(
-    disallowed.length,
-    0,
-    `Refusing to publish: working tree contains non-version changes:\n${disallowed.join('\n')}`,
+    !statusOutput.trim(),
+    `Commit all source changes and regenerate the release before publishing:\n${statusOutput.trimEnd()}`,
   );
 }
 
@@ -53,9 +26,8 @@ export function parsePublishOptions(argv = process.argv.slice(2)) {
       'dry-run': { type: 'boolean', default: false },
       access: { type: 'string' },
       tag: { type: 'string', default: 'latest' },
-      version: { type: 'string' },
       'expect-version': { type: 'string' },
-      'allow-version-dirty': { type: 'boolean', default: false },
+      'base-ref': { type: 'string' },
     },
   });
   const dryRun = Boolean(values['dry-run']);
@@ -63,6 +35,7 @@ export function parsePublishOptions(argv = process.argv.slice(2)) {
     dryRun || values.access,
     'Publishing requires an explicit --access restricted or --access public.',
   );
+  assert(dryRun || values['base-ref'], 'Publishing requires an explicit --base-ref.');
   const access = values.access ?? 'public';
   assert(['restricted', 'public'].includes(access), 'Invalid npm access level.');
   assert(/^[a-z][a-z0-9-]*$/u.test(values.tag), 'Use a dist-tag such as latest or next.');
@@ -70,8 +43,8 @@ export function parsePublishOptions(argv = process.argv.slice(2)) {
     dryRun,
     access,
     tag: values.tag,
-    version: values['expect-version'] ?? values.version,
-    allowVersionDirty: Boolean(values['allow-version-dirty']),
+    version: values['expect-version'],
+    baseRef: values['base-ref'],
   };
 }
 
@@ -127,33 +100,51 @@ export async function publishReleasePackages(options, deps = {}) {
   const loadRelease = deps.readRelease ?? readRelease;
   const getSourceIdentity = deps.sourceIdentity ?? sourceIdentity;
 
+  assert(options.dryRun || options.baseRef, 'Publishing requires an explicit --base-ref.');
+  const changed = options.baseRef
+    ? (await (deps.checkReleaseVersion ?? checkReleaseVersion)(options.baseRef)).changed
+    : null;
+  if (changed && changed.length === 0) {
+    log('No changed packages to publish.');
+    return;
+  }
   // A scope-specific .npmrc mapping otherwise takes precedence over --registry.
   const registryArgs = ['--registry', registry, `--@sinestack:registry=${registry}`];
-  const release = await loadRelease();
-  const version = release.packages[0].version;
-  if (options.version) {
-    assert.equal(
-      version,
-      options.version,
-      'The requested version differs from the checked-out packages.',
-    );
+  const release = await loadRelease(undefined, undefined, changed?.map(pkg => pkg.name));
+  const changedByName = changed && new Map(changed.map(pkg => [pkg.name, pkg.version]));
+  const selected = changedByName
+    ? release.packages.filter(pkg => changedByName.has(pkg.name))
+    : release.packages;
+  if (changedByName) {
+    assert.equal(selected.length, changedByName.size, 'Changed packages do not match release artifacts.');
+    for (const pkg of selected) {
+      assert.equal(pkg.version, changedByName.get(pkg.name), `Version mismatch for ${pkg.name}.`);
+    }
   }
-  assert(
-    !version.includes('-') || options.tag !== 'latest',
-    'Publish prereleases with --tag next (or another non-latest tag).',
-  );
+  for (const pkg of selected) {
+    if (options.version) {
+      assert.equal(pkg.version, options.version, 'The requested version differs from the checked-out packages.');
+    }
+    assert(
+      !pkg.version.includes('-') || options.tag !== 'latest',
+      'Publish prereleases with --tag next (or another non-latest tag).',
+    );
+    if (options.tag === 'latest') compareStableVersions(pkg.version, pkg.version);
+  }
+  if (options.dryRun && !options.baseRef) {
+    log(`Dry run validated ${selected.length} package archive(s).`);
+    return;
+  }
 
   if (!options.dryRun) {
     const gitStatus = runCommand('git', ['status', '--porcelain', '--untracked-files=all']);
     assert.equal(gitStatus.status, 0, 'Failed to inspect git status.');
-    assertDirtyStatusAllowed(gitStatus.stdout, options.allowVersionDirty);
+    assertDirtyStatusAllowed(gitStatus.stdout);
     const source = getSourceIdentity();
-    if (!options.allowVersionDirty) {
-      assert(
-        !source.dirty && !release.source.dirty,
-        'Commit all source changes and regenerate the release before publishing.',
-      );
-    }
+    assert(
+      !source.dirty && !release.source.dirty,
+      'Commit all source changes and regenerate the release before publishing.',
+    );
     assert.equal(release.source.commit, source.commit, 'Tarballs were built from a different commit.');
     assert.equal(release.source.tree, source.tree, 'Tarballs were built from a different source tree.');
     const npmVersionRes = runCommand('npm', ['--version']);
@@ -166,14 +157,70 @@ export async function publishReleasePackages(options, deps = {}) {
     );
   }
 
-  // Check the whole set before writing anything on real releases. A retry may skip an
-  // exact match, but must never silently replace a version published from different bytes.
+  // Preflight the selected set before writing anything. Matching integrity makes retries safe.
   const pending = [];
   if (options.dryRun) {
-    pending.push(...release.packages);
+    const viewEnv = viewCommandEnv(process.env);
+    for (const pkg of selected) {
+      const result = runCommand('npm', ['view', `${pkg.name}@${pkg.version}`, 'dist.integrity', '--json', ...registryArgs], { env: viewEnv });
+      if (result.status === 0) {
+        assert.equal(JSON.parse(result.stdout), pkg.integrity, `${pkg.name}@${pkg.version} already exists with different bytes; choose a new release version.`);
+        log(`Already published with matching integrity: ${pkg.name}@${pkg.version}`);
+      } else {
+        assert(isRegistryNotFound(result.stdout, result.stderr), `Cannot check ${pkg.name}@${pkg.version}; verify npm registry connectivity and read access before retrying.`);
+        pending.push(pkg);
+      }
+    }
   } else {
     const viewEnv = viewCommandEnv(process.env);
-    for (const pkg of release.packages) {
+    const selectedVersions = new Map(selected.map(pkg => [pkg.name, pkg.version]));
+    const workspaceNames = new Set(release.packages.map(pkg => pkg.name));
+    const checkedDependencies = new Set();
+    for (const pkg of changed) {
+      assert(typeof pkg.previousVersion === 'string' && pkg.previousVersion, `Missing base version for ${pkg.name}.`);
+      const spec = `${pkg.name}@${pkg.previousVersion}`;
+      const previous = runCommand('npm', ['view', spec, 'version', '--json', ...registryArgs], { env: viewEnv });
+      assert.equal(previous.status, 0, `Cannot verify previous release ${spec} on npm; retry the earlier release first.`);
+      assert.equal(JSON.parse(previous.stdout), pkg.previousVersion, `Cannot verify previous release ${spec} on npm; retry the earlier release first.`);
+      checkedDependencies.add(spec);
+    }
+    for (const pkg of selected) {
+      const manifest = release.manifests.find(item => item.name === pkg.name);
+      assert(manifest, `Missing manifest for ${pkg.name}.`);
+      for (const dependencies of [manifest.dependencies, manifest.optionalDependencies, manifest.peerDependencies]) {
+        for (const [name, version] of Object.entries(dependencies ?? {})) {
+          if (!workspaceNames.has(name)) continue;
+          if (selectedVersions.get(name) === version) continue;
+          const spec = `${name}@${version}`;
+          if (checkedDependencies.has(spec)) continue;
+          const dependency = runCommand('npm', ['view', spec, 'version', '--json', ...registryArgs], { env: viewEnv });
+          assert.equal(dependency.status, 0, `Cannot verify required dependency ${spec} on npm.`);
+          assert.equal(JSON.parse(dependency.stdout), version, `Cannot verify required dependency ${spec} on npm.`);
+          checkedDependencies.add(spec);
+        }
+      }
+    }
+    for (const pkg of selected) {
+      let latestVersion;
+      if (options.tag === 'latest') {
+        const latest = runCommand(
+          'npm',
+          ['view', `${pkg.name}@latest`, 'version', '--json', ...registryArgs],
+          { env: viewEnv },
+        );
+        if (latest.status === 0) {
+          latestVersion = JSON.parse(latest.stdout);
+          assert(
+            compareStableVersions(latestVersion, pkg.version) <= 0,
+            `Cannot publish ${pkg.name}@${pkg.version}: latest is newer (${latestVersion}).`,
+          );
+        } else {
+          assert(
+            isRegistryNotFound(latest.stdout, latest.stderr),
+            `Cannot check ${pkg.name}@latest; verify npm registry connectivity and read access before retrying.`,
+          );
+        }
+      }
       const result = runCommand(
         'npm',
         ['view', `${pkg.name}@${pkg.version}`, 'dist.integrity', '--json', ...registryArgs],
@@ -184,6 +231,10 @@ export async function publishReleasePackages(options, deps = {}) {
           JSON.parse(result.stdout),
           pkg.integrity,
           `${pkg.name}@${pkg.version} already exists with different bytes; choose a new release version.`,
+        );
+        assert(
+          options.tag !== 'latest' || latestVersion === pkg.version,
+          `${pkg.name}@${pkg.version} is already published, but latest does not point to it; restore the dist-tag before retrying.`,
         );
         log(`Already published with matching integrity: ${pkg.name}@${pkg.version}`);
         continue;
@@ -212,9 +263,7 @@ export async function publishReleasePackages(options, deps = {}) {
     const result = runCommand('npm', args, { env: pubEnv, inherit: true });
     assert.equal(result.status, 0, `npm publish failed for ${pkg.name}@${pkg.version}`);
   }
-  log(
-    `${options.dryRun ? 'Dry run checked' : 'Published or verified'} all six packages at ${version} (${options.access}, tag ${options.tag}).`,
-  );
+  log(`${options.dryRun ? 'Dry run checked' : 'Published or verified'} ${selected.length} package(s) (${options.access}, tag ${options.tag}).`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

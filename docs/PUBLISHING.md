@@ -1,44 +1,44 @@
 # Publishing `@sinestack/ai-*`
 
-SineStack AI publishes six synchronized packages in topological dependency order:
+The six packages have **independent versions**. Only changed packages are published, in dependency order: `@sinestack/ai-provider`, `@sinestack/ai-provider-utils`, `@sinestack/ai-core`, `@sinestack/ai-fal`, `@sinestack/ai-wavespeed`, and `@sinestack/ai-replicate`. An unchanged package keeps its own version and its existing exact dependency pins, even when a newer dependency exists.
 
-1. `@sinestack/ai-provider` — versioned `AssetModelV1` contracts, results, operations, and optional mapping interfaces.
-2. `@sinestack/ai-provider-utils` — shared JSON/URL validation, transport helpers, and default asset result mapping.
-3. `@sinestack/ai-core` — asset lifecycle orchestration, kind facades, resume, and explicit file materialization.
-4. `@sinestack/ai-fal` — fal queue adapter.
-5. `@sinestack/ai-wavespeed` — WaveSpeed prediction adapter.
-6. `@sinestack/ai-replicate` — Replicate prediction adapter.
+## Pull request and version rules
 
-## Local Release Verification
+1. Make all changes to `main` through a PR. The branch must include the current `main`, pass `Release version`, `Node 22` and `Node 24`, resolve review conversations, and use **Squash and merge**. Do not push directly, force-push, or delete `main`.
+2. Any changed file under `packages/<name>/` requires **that package's** stable version to be strictly newer than the version on the PR base. A shared `tsconfig.base.json` or TypeScript compiler lock change affects all package builds and requires each package to be bumped. Repository-only changes outside those inputs do not require a package bump. New package paths fail the check until their release order and publishing configuration are explicitly added. PR checks do not infer major/minor/patch from code; reviewers choose the semver appropriate for each package.
+3. Bump only the affected package, for example:
 
-Run the full release check before publishing:
+   ```sh
+   npm run version:release -- fal 0.1.1
+   ```
 
-```bash
+   The command updates only that package and its workspace lockfile entry. Existing internal dependency pins are **not** automatically updated: an unchanged dependent can keep using the older published version. If a dependent needs the new dependency, update its exact pin, then bump that dependent because its manifest changed. Repeat only for dependents that need updating. After all bumps and pin edits, run `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` and commit `package-lock.json`: npm needs nested lock entries for old pins when the workspace version has advanced. The `core` bump also updates its user-agent and integration assertion. The root workspace version is independent.
+
+4. After another PR merges, update the branch and repeat the check; each changed package's proposed version must still be newer than its own version on `main`. Commit all changed manifests, lockfile and source/test files; a version stamped only in CI is not accepted.
+5. After merging, monitor **Publish npm packages**. No package changes means a successful no-op, not a release. A merge starts the workflow but does not guarantee npm publishing succeeded.
+
+The active `protect main` ruleset requires PRs and all three checks from GitHub Actions, with strict up-to-date status, resolved conversations, no bypass actors, and squash merge. It blocks deletion and force pushes. Only one collaborator was available when this was configured, so approval is a team practice rather than an enforced review count; enable at least one approval when another reviewer is available. `Release version` is already required during bootstrap: existing PRs must merge or rebase the bootstrap commit. A PR targeting a different branch fails this check intentionally so an earlier check cannot satisfy the `main` gate.
+
+## Automatic npm release
+
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs on each push to `main`, compares the committed merge tree with the previous commit, verifies package versions and pins, and runs `npm ci` and `npm run verify:release`. It packs all packages for isolated consumer verification, then runs `npm publish --dry-run` only for unpublished changed packages and publishes **only the selected changed packages**. The PR must include the version changes before merge. No version commit, tag, or GitHub Release is created automatically.
+
+Releases are serialized with `queue: max`. GitHub can start queued runs out of merge order; the queue has a maximum of 100 pending runs. Preflight checks each selected package's npm `latest` and target integrity before writing, refusing to move `latest` backward. Before a changed package is published, its previous `main` version must already exist on npm; a missing earlier release blocks it. Exact internal dependencies not selected at that exact version must already exist on npm, or the release fails before publishing. Inspect failed and canceled runs: a later unrelated package release does **not** make a failed earlier package release unnecessary.
+
+The `npm` GitHub environment and each package on npm need a Trusted Publisher configured with organization/user `fei-bai-inc`, repository `sinestack-ai`, workflow `release.yml`, and environment `npm`. The workflow grants `id-token: write`; npm CLI >= 11.5.1 is required. No long-lived publish token is used; `NPM_READ_TOKEN` is optional and only used for registry reads.
+
+### Failure and recovery
+
+- Retry the failed **main push run** with **Re-run failed jobs**. The same commit and selected versions are used. A package already on npm is skipped only if its tarball integrity matches; a mismatch aborts before any writes and requires a new version in a new PR.
+- If a selected package now has a newer `latest`, its older run fails rather than rolling back the tag. Verify that the newer package release contains the earlier changes. Other selected packages may still need a new versioned PR; do not assume an unrelated later run published them.
+- If a selected package's exact internal dependency is missing from npm, first fix and retry the earlier failed dependency release, then retry the dependent release. If the queue is full, a canceled run also needs attention.
+
+## Local verification
+
+```sh
+npm ci
+npm run check:release-version -- origin/main
 npm run verify:release
 ```
 
-This command runs:
-
-- `npm run verify`: TypeScript project build, declaration and example typecheck, all unit/integration tests, and offline verification of upstream `ai` / `@ai-sdk/*` versions and file hashes (`check:upstream`).
-- `npm run test:packages`: packs all six workspaces into `artifacts/`, verifies exact archive file manifests, installs the `.tgz` archives into an isolated temporary consumer outside the workspace, runs a runtime smoke test across all six packages, and typechecks the installed `.d.ts` declarations.
-- `npm run release:dry-run`: validates version alignment, internal dependency specifiers, tarball contents, and runs `npm publish --dry-run` for all six packages.
-
-## Version Bumping
-
-All six packages and `package-lock.json` must share the exact same version and internal `@sinestack/ai-*` dependency specifiers:
-
-```bash
-npm run version:release -- 0.1.0
-```
-
-## GitHub Actions Trusted Publishing (OIDC)
-
-The [`.github/workflows/release.yml`](../.github/workflows/release.yml) workflow publishes from `refs/heads/main` using npm Trusted Publishing (`id-token: write` in the `npm` GitHub environment):
-
-- Each package on `https://www.npmjs.com` is configured with a GitHub Actions Trusted Publisher:
-  - **Organization / user**: `fei-bai-inc`
-  - **Repository**: `sinestack-ai`
-  - **Workflow filename**: `release.yml`
-  - **Environment name**: `npm`
-- No long-lived publish token (`NPM_TOKEN`) is stored in GitHub Actions secrets; `NODE_AUTH_TOKEN` and `NPM_TOKEN` are cleared for `npm publish` so npm CLI (`>= 11.5.1`) exchanges the GitHub OIDC token directly.
-- If a multi-package release fails partway through and is re-triggered, `scripts/publish.mjs` compares the local tarball SHA-512 integrity against the registry (`dist.integrity`) and safely skips already-published packages with identical bytes while aborting on any integrity mismatch.
+The first check compares the current tree with fetched `origin/main`. `verify:release` builds and typechecks, runs tests and upstream checks, packs all six workspaces, installs them into an isolated consumer and executes that consumer. It does not publish. To dry-run unpublished changed packages, use `npm run release:dry-run -- --base-ref origin/main` after `verify:release`; it queries npm and may require authentication for private packages. Actual publish uses the committed `main` tree and OIDC.
