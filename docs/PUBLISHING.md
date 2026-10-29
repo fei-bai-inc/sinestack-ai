@@ -29,7 +29,7 @@ Releases are serialized with `queue: max`. GitHub can start queued runs out of m
 
 The `npm` GitHub environment and each package on npm need a Trusted Publisher configured with organization/user `fei-bai-inc`, repository `sinestack-ai`, workflow `release.yml`, and environment `npm`. The workflow grants `id-token: write`; npm CLI >= 11.5.1 is required. No long-lived publish token is used; `NPM_READ_TOKEN` is optional and only used for registry reads.
 
-`@sinestack/ai-tripo` has not yet been published to npm. npm requires the package to exist before a Trusted Publisher can be configured. Before the first automatic release, an authorized maintainer must create a non-release bootstrap version on npm, configure the Trusted Publisher above, and ensure the selected release's previous `main` version is available. Do not publish the intended `0.1.1` release as the bootstrap version. Until this is done, OIDC cannot publish Tripo; the workflow must fail rather than falling back to a stored token.
+For a new package, configure a Trusted Publisher before its first automatic release. npm requires the package to exist first; create a non-release bootstrap version and ensure the previous `main` version is available before merging. Do not use the intended release version as the bootstrap version. `@sinestack/ai-tripo@0.1.0` is the published baseline for the first automated Tripo release. OIDC failures must not fall back to a stored publish token.
 
 ### Failure and recovery
 
