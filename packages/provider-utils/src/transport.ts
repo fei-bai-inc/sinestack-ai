@@ -27,6 +27,29 @@ export interface AssetProviderResponse {
   readonly value: unknown;
   readonly response: AssetResponse & { readonly headers: Record<string, string> };
 }
+/** Per-request protocol decoding. Transport and execution policy remain shared. */
+export interface AssetProviderResponseHandlers {
+  readonly successfulResponseHandler?: ResponseHandler<unknown>;
+  readonly failedResponseHandler?: ResponseHandler<APICallError>;
+}
+export interface AssetProviderRawRequestOptions {
+  readonly accept?: string;
+  /** Return the original redirect response only. Never follow its Location. */
+  readonly redirect?: 'error' | 'manual';
+  readonly failedResponseHandler?: ResponseHandler<APICallError>;
+}
+type RequestOptions = Pick<AssetModelV1OperationOptions, 'headers' | 'abortSignal'>;
+type RequestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+interface PreparedRequest {
+  readonly url: URL;
+  readonly method: RequestMethod;
+  readonly options: RequestOptions;
+  readonly headers: Headers;
+  readonly requestBody?: JSONObject;
+  readonly formData?: FormData;
+  readonly fetch: typeof globalThis.fetch;
+  readonly redirect: 'error' | 'manual';
+}
 /** A malformed protocol response is not a reason to repeat a paid submission. */
 export function invalidResponse(response: AssetProviderResponse, cause: unknown, provider: string): APICallError {
   return new APICallError({
@@ -54,15 +77,54 @@ export class AssetProviderTransport {
   }
   async request(
     value: string | URL,
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
-    options: Pick<AssetModelV1OperationOptions, 'headers' | 'abortSignal'>,
+    method: RequestMethod,
+    options: RequestOptions,
     body?: JSONObject | FormData,
     allowEmpty = false,
+    handlers: AssetProviderResponseHandlers = {},
   ): Promise<AssetProviderResponse> {
+    const prepared = this.prepare(value, method, options, body);
+    const successfulResponseHandler: ResponseHandler<AssetProviderResponse> = async context => {
+      // Meshy DELETE returns an empty 200, not necessarily 204. This exception is
+      // explicit per call; malformed or empty JSON generation responses still fail.
+      const empty = allowEmpty && (context.response.status === 204 ||
+        (context.response.status === 200 && (await context.response.clone().text()).trim() === ''));
+      const parsed = empty
+        ? { value: undefined, responseHeaders: Object.fromEntries(context.response.headers.entries()) }
+        : await (handlers.successfulResponseHandler ?? jsonResponse)(context);
+      const responseHeaders = parsed.responseHeaders ?? Object.fromEntries(context.response.headers.entries());
+      return { value: { url: prepared.url.href, statusCode: context.response.status, value: parsed.value,
+        response: { headers: responseHeaders, body: parsed.value } }, responseHeaders };
+    };
+    return this.dispatch(prepared, successfulResponseHandler, handlers.failedResponseHandler);
+  }
+  /**
+   * Open one response without consuming its body. The caller owns stream reading
+   * and cancellation. Errors still use the selected SDK response handler.
+   */
+  async requestRaw(
+    value: string | URL,
+    method: RequestMethod,
+    options: RequestOptions,
+    rawOptions: AssetProviderRawRequestOptions = {},
+  ): Promise<Response> {
+    const prepared = this.prepare(value, method, options, undefined, rawOptions);
+    return this.dispatch(prepared, async ({ response }) => ({ value: response,
+      responseHeaders: Object.fromEntries(response.headers.entries()) }), rawOptions.failedResponseHandler);
+  }
+  private prepare(
+    value: string | URL,
+    method: RequestMethod,
+    options: RequestOptions,
+    body?: JSONObject | FormData,
+    responseOptions: Pick<AssetProviderRawRequestOptions, 'accept' | 'redirect'> = {},
+  ): PreparedRequest {
     // Validate the destination before loading or attaching credentials.
     const url = httpURL(typeof value === 'string' ? value : value.href, `${this.settings.provider} request URL`);
     this.validateDestination(url);
     options.abortSignal.throwIfAborted();
+    const redirect = responseOptions.redirect ?? 'error';
+    if (redirect !== 'error' && redirect !== 'manual') throw new TypeError('Transport cannot follow redirects');
     const formData = body instanceof FormData ? body : undefined;
     if (formData !== undefined && method !== 'POST') throw new TypeError('Multipart transport requires POST');
     if (method === 'DELETE' && body !== undefined) throw new TypeError('DELETE transport does not accept a body');
@@ -72,11 +134,13 @@ export class AssetProviderTransport {
     headers.set('Authorization', `${this.settings.authorizationScheme ?? 'Bearer'} ${loadApiKey({
       apiKey: this.settings.apiKey, environmentVariableName: this.settings.environmentVariableName, description: this.settings.provider,
     })}`);
-    headers.set('Accept', 'application/json');
+    headers.set('Accept', responseOptions.accept ?? 'application/json');
     if (requestBody !== undefined) headers.set('Content-Type', 'application/json');
     if (formData !== undefined) headers.delete('Content-Type');
     const guardedFetch: typeof globalThis.fetch = async (input, init) => {
-      const response = await this.fetcher(input, { ...init, redirect: 'error' });
+      // Workerd supports manual redirects but not Fetch's error mode. Keep the
+      // logical policy below while never letting the network layer follow one.
+      const response = await this.fetcher(input, { ...init, redirect: 'manual' });
       if (response.redirected || (response.url && response.url !== url.href)) {
         throw new APICallError({
           message: `${this.settings.provider} request redirected outside the allowed request flow.`,
@@ -85,33 +149,32 @@ export class AssetProviderTransport {
       }
       return response;
     };
-    const failedResponseHandler = createJsonErrorResponseHandler({
+    return { url, method, options, headers, requestBody, formData, fetch: guardedFetch, redirect };
+  }
+  private async dispatch<T>(
+    prepared: PreparedRequest,
+    successfulResponseHandler: ResponseHandler<T>,
+    customErrorHandler?: ResponseHandler<APICallError>,
+  ): Promise<T> {
+    const { url, method, options, headers, requestBody, formData, fetch: guardedFetch, redirect } = prepared;
+    const failedResponseHandler = customErrorHandler ?? createJsonErrorResponseHandler({
       errorSchema: responseSchema,
       errorToMessage: error => errorMessage(error) ?? `${this.settings.provider} request failed.`,
     });
-    const successfulResponseHandler: ResponseHandler<AssetProviderResponse> = async context => {
-      // Meshy DELETE returns an empty 200, not necessarily 204. This exception is
-      // explicit per call; malformed or empty JSON generation responses still fail.
-      const empty = allowEmpty && (context.response.status === 204 ||
-        (context.response.status === 200 && (await context.response.clone().text()).trim() === ''));
-      const parsed = empty
-        ? { value: undefined, responseHeaders: Object.fromEntries(context.response.headers.entries()) }
-        : await jsonResponse(context);
-      const responseHeaders = parsed.responseHeaders ?? {};
-      return { value: { url: url.href, statusCode: context.response.status, value: parsed.value,
-        response: { headers: responseHeaders, body: parsed.value } }, responseHeaders };
-    };
     const common = { url: url.href, headers: Object.fromEntries(headers.entries()), abortSignal: options.abortSignal,
       fetch: guardedFetch, successfulResponseHandler, failedResponseHandler };
     try {
-      if (method === 'GET') return (await getFromApi({ ...common, validateUrl: false, credentialedOrigin: this.base.origin })).value;
-      if (method === 'POST' && formData !== undefined) return (await postFormDataToApi({ ...common, formData })).value;
-      if (method === 'POST') return (await postJsonToApi({ ...common, body: requestBody })).value;
+      if (redirect === 'error') {
+        if (method === 'GET') return (await getFromApi({ ...common, validateUrl: false, credentialedOrigin: this.base.origin })).value;
+        if (method === 'POST' && formData !== undefined) return (await postFormDataToApi({ ...common, formData })).value;
+        if (method === 'POST') return (await postJsonToApi({ ...common, body: requestBody })).value;
+      }
       // Reuse the existing guarded single-fetch path and official response handlers.
       const response = await guardedFetch(url.href, { method, headers, signal: options.abortSignal,
         ...(requestBody === undefined ? {} : { body: JSON.stringify(requestBody) }) });
       const context = { response, url: url.href, requestBodyValues: requestBody };
-      if (!response.ok) throw (await failedResponseHandler(context)).value;
+      const manualRedirect = redirect === 'manual' && [301, 302, 303, 307, 308].includes(response.status);
+      if (!response.ok && !manualRedirect) throw (await failedResponseHandler(context)).value;
       return (await successfulResponseHandler(context)).value;
     } catch (error) {
       if (options.abortSignal.aborted) throw options.abortSignal.reason;

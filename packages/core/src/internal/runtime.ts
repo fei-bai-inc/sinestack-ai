@@ -39,7 +39,8 @@ function failure<I, R, D extends string>(error: unknown, ctx: RuntimeContext<I, 
   const cause = ctx.signal.aborted ? ctx.signal.reason : error;
   const name = cause instanceof Error ? cause.name : undefined;
   const message = cause instanceof Error ? cause.message : String(cause);
-  const details = { cause, phase: ctx.phase, task: ctx.task };
+  const details = { cause, phase: ctx.phase, task: ctx.task,
+    ...(cause instanceof TaskExecutionError ? { response: cause.response, providerMetadata: cause.providerMetadata } : {}) };
   if (name === 'TimeoutError') return new TaskTimeoutError(message, details);
   if (ctx.signal.aborted || name === 'AbortError') return new TaskAbortError(message, details);
   return new TaskExecutionError(message, { ...details, code: cause instanceof TaskExecutionError ? cause.code : undefined });
@@ -57,7 +58,7 @@ export async function execute<I, R, D extends string, OUT>(
   const ctx: RuntimeContext<I, R, D> = {
     driver, options, api, callId: `task_${generateId()}`,
     signal: mergeAbortSignals(options.abortSignal, options.timeoutMs) ?? new AbortController().signal,
-    headers: withUserAgentSuffix(options.headers ?? {}, 'sinestack-ai/0.1.2'), warnings: [], responses: [],
+    headers: withUserAgentSuffix(options.headers ?? {}, 'sinestack-ai/0.1.3'), warnings: [], responses: [],
     ...(task ? { task } : {}),
   };
   try {
@@ -155,8 +156,10 @@ export async function wait<I, R, D extends string>(ctx: RuntimeContext<I, R, D>,
     const status = await query(ctx, ctx.signal);
     switch (status.status) {
       case 'completed': return status;
-      case 'failed': throw new TaskExecutionError(status.error.message, { code: 'TASK_JOB_FAILED', cause: status.error });
-      case 'cancelled': throw new TaskAbortError(status.message ?? 'Remote task was cancelled');
+      case 'failed': throw new TaskExecutionError(status.error.message, { code: 'TASK_JOB_FAILED', cause: status.error,
+        response: status.response, providerMetadata: status.providerMetadata });
+      case 'cancelled': throw new TaskAbortError(status.message ?? 'Remote task was cancelled', {
+        response: status.response, providerMetadata: status.providerMetadata });
       default:
         if (notification && strictNotification) throw new TaskExecutionError('Webhook resolved but the asset operation is not terminal', { code: 'TASK_WEBHOOK_NOT_TERMINAL' });
     }

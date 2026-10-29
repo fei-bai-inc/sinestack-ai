@@ -1,4 +1,4 @@
-import type { JSONObject } from '@sinestack/ai-provider';
+import type { AssetResponse, JSONObject } from '@sinestack/ai-provider';
 import { AssetProviderTransport, invalidResponse, jsonObject } from '@sinestack/ai-provider-utils';
 import type { AssetProviderResponse } from '@sinestack/ai-provider-utils';
 import type { MeshyProviderSettings, MeshyRequestOptions, MeshyTaskRecord } from './types.js';
@@ -37,7 +37,11 @@ export class MeshyClient {
     this.transport = new AssetProviderTransport({ ...settings, provider: 'Meshy',
       baseURL: settings.baseURL ?? 'https://api.meshy.ai/openapi', environmentVariableName: 'MESHY_API_KEY' });
   }
-  request(path: string, method: 'GET' | 'POST' | 'DELETE', options: MeshyRequestOptions = {}, body?: JSONObject, allowEmpty = false) {
+  // Anchor the public response to the direct contract dependency. Independent
+  // versions can put the transport's older contract under a nested node_modules.
+  request(path: string, method: 'GET' | 'POST' | 'DELETE', options: MeshyRequestOptions = {}, body?: JSONObject, allowEmpty = false): Promise<
+    Omit<AssetProviderResponse, 'response'> & { readonly response: AssetResponse & { readonly headers: Record<string, string> } }
+  > {
     return this.transport.request(`${this.transport.baseURL}/${path}`, method,
       { headers: { ...options.headers }, abortSignal: options.abortSignal ?? new AbortController().signal }, body, allowEmpty);
   }

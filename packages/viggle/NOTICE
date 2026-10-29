@@ -1,0 +1,11 @@
+SineStack AI Viggle provider
+Copyright 2026 SineStack AI contributors.
+Licensed under the Apache License, Version 2.0.
+
+Uses SineStack AI contracts and its shared transport, built on Vercel AI SDK
+(Copyright 2023 Vercel, Inc.; Apache-2.0). Provider methods perform single
+protocol operations. Waiting, retries and signal composition remain in core.
+Viggle's public V1 API documentation was used as the protocol reference;
+no Viggle SDK execution engine is embedded. lossless-json and eventsource-parser
+are runtime dependencies under their respective MIT licenses.
+https://github.com/fei-bai-inc/sinestack-ai

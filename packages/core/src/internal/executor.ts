@@ -70,6 +70,8 @@ export async function execute<I, K extends string, OUT>(api: AssetAPI, model: As
     if (!(error instanceof TaskExecutionError)) return error;
     const cached = errors.get(error); if (cached) return cached;
     const details = { cause: error.cause, phase: assetPhase(error.phase),
+      response: error.response ?? (error.cause instanceof AssetExecutionError ? error.cause.response : undefined),
+      providerMetadata: error.providerMetadata ?? (error.cause instanceof AssetExecutionError ? error.cause.providerMetadata : undefined),
       ...(error.task ? { operation: toOperation(error.task as TaskHandle<K>) } : {}) };
     const code = error.cause instanceof AssetExecutionError ? error.cause.code : error.code.replace(/^TASK_/, 'ASSET_');
     const converted = error.name === 'TimeoutError' ? new AssetTimeoutError(error.message, details)

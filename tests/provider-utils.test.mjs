@@ -70,7 +70,7 @@ test('transport locks credentials and snapshots mutable connection configuration
     assert.equal(headers.get('x-connection'), 'original');
     assert.equal(headers.get('x-request'), 'specific');
     assert.equal(init.signal, signal);
-    assert.equal(init.redirect, 'error');
+    assert.equal(init.redirect, 'manual');
     return Response.json({ ok: true });
   });
   configured.headers = { 'x-connection': 'original' };

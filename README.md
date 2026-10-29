@@ -18,6 +18,7 @@
 | `@sinestack/ai-replicate` | Replicate prediction、固定版本及取消；无模型目录。 |
 | `@sinestack/ai-tripo` | Tripo v3 生成、Model Processing、检查、骨骼、动画及辅助资源。 |
 | `@sinestack/ai-meshy` | Meshy 生成、处理、打印分析/修复、骨骼、动画、独立动作及辅助资源。 |
+| `@sinestack/ai-viggle` | Viggle 视频、图片、角色/动作资源、独立骨骼动作、场景与超分辨率。 |
 
 Provider 方法只完成一次协议操作，不添加自己的 polling、重试、abort 或 hook 引擎。模型版本保持开放，不设 SDK 型号白名单。Tripo 与 Meshy 均实现对应领域契约；公共执行内核没有供应商分支。
 
@@ -38,7 +39,7 @@ npm run build
 node --experimental-strip-types examples/custom-provider.ts
 ```
 
-八个 `@sinestack/ai-*` 包采用独立版本。PR 必须为变更包提交相应版本和锁文件；未变更包保留自己的版本及精确依赖。合入 main 后自动发布本次选中的变更包，分支提交不会发布。Tripo、Meshy 均纳入打包和独立安装测试，完整规则见 [发布说明](docs/PUBLISHING.md)。
+九个 `@sinestack/ai-*` 包采用独立版本。PR 必须为变更包提交相应版本和锁文件；未变更包保留自己的版本及精确依赖。合入 main 后自动发布本次选中的变更包，分支提交不会发布。Tripo、Meshy、Viggle 均纳入打包和独立安装测试，完整规则见 [发布说明](docs/PUBLISHING.md)。
 
 ## 生成：显式模型 ID 与原生 input
 
@@ -138,6 +139,30 @@ async function refineAndAnalyze(previewTaskId: string) {
 
 Meshy 没有伪造独立 Rig Check。普通 DELETE 是删除任务/产物，不是取消。动作目录、任务列表、余额和用量是直接资源查询。Creative Lab 专用工作流和 SSE/watch 未纳入此次实现。完整参数、输出、文档差异和联调边界见 [Meshy 文档](docs/MESHY.md)。
 
+## Viggle：视频、资源与场景
+
+```ts
+import { generateAsset, generateAnimation3D, startTask, waitForTask } from '@sinestack/ai-core';
+import { createViggleProvider } from '@sinestack/ai-viggle';
+
+const viggle = createViggleProvider({ connectionId: 'production-account' }); // VIGGLE_API_KEY
+const video = await generateAsset({
+  model: viggle.textToVideo(),
+  input: { prompt: 'A paper airplane flies through a sunlit office', quality: 'high', duration_s: 5 },
+  poll: { intervalMs: 3000 },
+});
+const motion = await generateAnimation3D({
+  model: viggle.textToMotion({ format: 'fbx' }),
+  input: { text: 'A person waves with the right hand', duration_seconds: 5 },
+  poll: { intervalMs: 3000 },
+});
+console.log(video.assets, motion.assets); // Motion 保留三套 rig 导出。
+```
+
+H3 的文字、首帧、首尾帧和参考素材模式分别提供工厂；角色动画、Render 和图片生成保留原生 multipart 参数及 Blob。`upscaleVideo()`、角色/动作资源创建和场景阶段使用 `startTask` / `waitForTask`；没有文件的资源完成结果无需伪造 assets。场景视图生成与重建分别提交、保存和恢复。
+
+`renders.prepare/upload` 显式准备草稿与上传，`renderDraft()` 才创建生成任务。`renders.events()` 是一次 SSE 观察，不自动重连或重新生成；`renders.download()` 返回签名下载地址。远端失败保留原始诊断，超出 JavaScript 安全整数范围的 seed 保留为精确十进制字符串。完整 19 个能力入口、资源接口与限制见 [Viggle 文档](docs/VIGGLE.md)。
+
 ## 提交、持久化与恢复
 
 资产 API 的原用法保持：
@@ -200,8 +225,9 @@ const file = await materializeAsset(result.asset, { maxBytes: 64 * 1024 * 1024 }
 | Replicate | `https://api.replicate.com/v1` | `REPLICATE_API_TOKEN` |
 | Tripo | `https://openapi.tripo3d.ai/v3` | `TRIPO_API_KEY` |
 | Meshy | `https://api.meshy.ai/openapi` | `MESHY_API_KEY` |
+| Viggle | `https://apis.viggle.ai/v1` | `VIGGLE_API_KEY` |
 
-连接支持 apiKey/baseURL/headers/fetch/name，Tripo、Meshy 额外支持 connectionId。配置会复制保存；实际认证不能被调用级 headers 覆盖。带凭证请求拒绝重定向；自定义 fetch 也应遵守该限制。签名存储上传独立执行，不能继承 API key 或连接 header。
+连接支持 apiKey/baseURL/headers/fetch/name，Tripo、Meshy、Viggle 额外支持 connectionId。配置会复制保存；实际认证不能被调用级 headers 覆盖。带凭证请求拒绝跟随重定向；Viggle 下载只交付原始 302 中的签名地址。自定义 fetch 也应遵守该限制。签名存储上传独立执行，不能继承 API key 或连接 header。
 
 提交和直接执行默认不重试；正数重试要求明确远端幂等保障。状态读取默认重试两次，由 AI SDK 决定错误分类、退避与 Retry-After。远端 failed/cancelled 不触发重新生成。
 
@@ -209,7 +235,7 @@ const file = await materializeAsset(result.asset, { maxBytes: 64 * 1024 * 1024 }
 
 五个 hooks 为 onStart/onOperation/onProgress/onFinish/onError，均 await 且忽略回调错误。鉴权、关键持久化和业务事务放在它们之外。
 
-Tripo 与 Meshy 都不伪造提交级 callback URL。Tripo 验签和宿主事务/outbox 见 [TRIPO.md](docs/TRIPO.md)。Meshy 公共文档未提供已核验的签名协议，`parseMeshyWebhook` 明确只是非认证解析；应由宿主授权关联后唤醒既有任务查询，不能信任通知中的结果。SSE/watch 和持久化调度器尚未实现。
+Tripo、Meshy 与 Viggle 都不伪造提交级 callback URL。Tripo 验签和宿主事务/outbox 见 [TRIPO.md](docs/TRIPO.md)。Meshy 公共文档未提供已核验的签名协议，`parseMeshyWebhook` 明确只是非认证解析；应由宿主授权关联后唤醒既有任务查询，不能信任通知中的结果。Viggle Render 提供单次 SSE；通用 watch 和持久化调度器尚未实现。
 
 ## 开发与发布验证
 
@@ -221,11 +247,11 @@ npm run verify:release
 
 `check` 包括类型、构建和 mock 契约测试；CI 使用 Node 22/24。`check:upstream` 离线检查 3 个精确上游包和 19 项源码 hash，不联网更新基线。
 
-`verify:release` 还会打包八个 workspace、在工作区之外安装真实 tarball 并检查公开类型和运行调用，最后运行 npm publish dry-run。正式发布沿用 GitHub Actions OIDC 配置；显式发布版本、访问级别和 dist-tag，详见 [PUBLISHING.md](docs/PUBLISHING.md)。
+`verify:release` 还会打包九个 workspace、在工作区之外安装真实 tarball 并检查公开类型和运行调用，最后运行 npm publish dry-run。正式发布沿用 GitHub Actions OIDC 配置；显式发布版本、访问级别和 dist-tag，详见 [PUBLISHING.md](docs/PUBLISHING.md)。
 
-测试不调用真实计费 API，不证明供应商账号权限、所有版本参数组合或二进制模型内容正确；Cloudflare/workerd 运行验证尚未完成。
+测试不调用真实计费 API，不证明供应商账号权限、所有版本参数组合或二进制模型内容正确。Viggle 另有真实 workerd 本地运行验证：不启用 nodejs_compat，覆盖任务恢复、精确 seed、multipart、SSE 与签名上传；复现方式见 [Worker 验证](tests/workerd/README.md)。
 
-示例：[自定义 provider](examples/custom-provider.ts)、[聚合平台](examples/media-providers.ts)、[资产恢复](examples/submit-and-resume.ts)、[Tripo](examples/tripo.ts)、[Meshy](examples/meshy.ts)。
+示例：[自定义 provider](examples/custom-provider.ts)、[聚合平台](examples/media-providers.ts)、[资产恢复](examples/submit-and-resume.ts)、[Tripo](examples/tripo.ts)、[Meshy](examples/meshy.ts)、[Viggle](examples/viggle.ts)。
 
 ## 上游与许可证
 
