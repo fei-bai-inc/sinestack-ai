@@ -1,0 +1,14 @@
+{
+  "name": "@sinestack/ai-meshy",
+  "version": "0.1.0",
+  "description": "Meshy generation, model processing, rigging, animation and printability provider for SineStack AI",
+  "type": "module",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "files": ["dist", "src", "LICENSE", "NOTICE"],
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "engines": { "node": ">=22" },
+  "dependencies": { "@sinestack/ai-provider": "0.1.0", "@sinestack/ai-provider-utils": "0.1.0" },
+  "publishConfig": { "registry": "https://registry.npmjs.org" },
+  "repository": { "type": "git", "url": "https://github.com/fei-bai-inc/sinestack-ai.git", "directory": "packages/meshy" }
+}

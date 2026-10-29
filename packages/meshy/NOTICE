@@ -1,0 +1,10 @@
+SineStack AI Meshy provider
+Copyright 2026 SineStack AI contributors.
+Licensed under the Apache License, Version 2.0.
+
+Uses SineStack AI contracts and its shared transport, built on Vercel AI SDK
+(Copyright 2023 Vercel, Inc.; Apache-2.0). Provider methods perform single
+protocol operations. Waiting, retries and signal composition remain in core.
+Meshy's public API reference and OpenAPI specification were used as protocol
+references; no Meshy SDK execution engine is embedded.
+https://github.com/fei-bai-inc/sinestack-ai

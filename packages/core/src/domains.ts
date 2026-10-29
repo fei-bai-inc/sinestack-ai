@@ -1,4 +1,4 @@
-import type { Model3DProcessor, ModelAnimator, ModelRigger, RigChecker, TaskDriver } from '@sinestack/ai-provider';
+import type { Model3DAnalyzer, Model3DProcessor, ModelAnimator, ModelRigger, RigChecker, TaskDriver } from '@sinestack/ai-provider';
 import type { DomainResult, TaskRunOptions } from './task-types.js';
 import { runTask } from './tasks.js';
 
@@ -14,6 +14,9 @@ async function domain<I, R extends object, D extends string>(api: string, expect
 }
 export function processModel3D<I, R extends object>(options: Options<I, R, 'model3d.process'> & { processor: Model3DProcessor<I, R> }): Promise<DomainResult<R, 'model3d.process'>> {
   const { processor, ...rest } = options; return domain('processModel3D', 'model3d.process', processor, rest);
+}
+export function analyzeModel3D<I, R extends object>(options: Options<I, R, 'model3d.analyze'> & { analyzer: Model3DAnalyzer<I, R> }): Promise<DomainResult<R, 'model3d.analyze'>> {
+  const { analyzer, ...rest } = options; return domain('analyzeModel3D', 'model3d.analyze', analyzer, rest);
 }
 export function checkRigging<I, R extends { readonly riggable: boolean }>(options: Options<I, R, 'model3d.rig.check'> & { checker: RigChecker<I, R> }): Promise<DomainResult<R, 'model3d.rig.check'>> {
   const { checker, ...rest } = options; return domain('checkRigging', 'model3d.rig.check', checker, rest, result => {
