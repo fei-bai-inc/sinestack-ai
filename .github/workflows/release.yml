@@ -1,4 +1,4 @@
-name: Publish npm packages
+name: Publish npm and GitHub releases
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   release:
-    name: Verify, pack, and publish
+    name: Verify, pack, and publish npm packages
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: npm
@@ -24,6 +24,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
@@ -52,6 +53,7 @@ jobs:
           name: sinestack-ai-npm-packages
           path: artifacts/*.tgz
           if-no-files-found: error
+          overwrite: true
 
       - name: Publish npm packages
         env:
@@ -59,4 +61,60 @@ jobs:
           NPM_TOKEN: ''
           NPM_READ_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
           BEFORE_SHA: ${{ github.event.before }}
-        run: npm run release:publish -- --base-ref "$BEFORE_SHA" --access public --tag latest
+        run: npm run release:publish -- --base-ref "$BEFORE_SHA" --access public --tag latest --receipt artifacts/published.json
+
+      - name: Upload successful publication batch
+        uses: actions/upload-artifact@v7
+        with:
+          name: sinestack-ai-published-batch
+          path: artifacts/published.json
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: sinestack-ai-release-manifest
+          path: artifacts/manifest.json
+          if-no-files-found: error
+          overwrite: true
+
+  github-release:
+    name: Publish package GitHub Releases
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Download verified npm tarballs
+        uses: actions/download-artifact@v8
+        with:
+          name: sinestack-ai-npm-packages
+          path: artifacts
+
+      - name: Download successful publication batch
+        uses: actions/download-artifact@v8
+        with:
+          name: sinestack-ai-published-batch
+          path: artifacts
+
+      - name: Download release manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: sinestack-ai-release-manifest
+          path: artifacts
+
+      - name: Create or resume package GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npm run release:github

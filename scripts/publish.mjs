@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
@@ -29,6 +30,7 @@ export function parsePublishOptions(argv = process.argv.slice(2)) {
       tag: { type: 'string', default: 'latest' },
       'expect-version': { type: 'string' },
       'base-ref': { type: 'string' },
+      receipt: { type: 'string' },
     },
   });
   const dryRun = Boolean(values['dry-run']);
@@ -37,6 +39,7 @@ export function parsePublishOptions(argv = process.argv.slice(2)) {
     'Publishing requires an explicit --access restricted or --access public.',
   );
   assert(dryRun || values['base-ref'], 'Publishing requires an explicit --base-ref.');
+  assert(!values.receipt || !dryRun, 'Publication receipts cannot be written by a dry-run.');
   const access = values.access ?? 'public';
   assert(['restricted', 'public'].includes(access), 'Invalid npm access level.');
   assert(/^[a-z][a-z0-9-]*$/u.test(values.tag), 'Use a dist-tag such as latest or next.');
@@ -46,6 +49,7 @@ export function parsePublishOptions(argv = process.argv.slice(2)) {
     tag: values.tag,
     version: values['expect-version'],
     baseRef: values['base-ref'],
+    receipt: values.receipt,
   };
 }
 
@@ -107,7 +111,7 @@ export async function publishReleasePackages(options, deps = {}) {
     : null;
   if (changed && changed.length === 0) {
     log('No changed packages to publish.');
-    return;
+    return options.dryRun ? undefined : { schemaVersion: 1, packages: [] };
   }
   // A scope-specific .npmrc mapping otherwise takes precedence over --registry.
   const registryArgs = ['--registry', registry, `--@sinestack:registry=${registry}`];
@@ -286,8 +290,24 @@ export async function publishReleasePackages(options, deps = {}) {
     assert.equal(result.status, 0, `npm publish failed for ${pkg.name}@${pkg.version}`);
   }
   log(`${options.dryRun ? 'Dry run checked' : 'Published or verified'} ${selected.length} package(s) (${options.access}, tag ${options.tag}).`);
+  if (!options.dryRun) {
+    return {
+      schemaVersion: 1,
+      repository: release.repository,
+      source: release.source,
+      npm: { access: options.access, tag: options.tag },
+      packages: selected.map(({ name, version, file, sha256, integrity, bytes }) => ({ name, version, file, sha256, integrity, bytes })),
+    };
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await publishReleasePackages(parsePublishOptions(process.argv.slice(2)));
+  const options = parsePublishOptions(process.argv.slice(2));
+  const receiptPath = options.receipt && resolve(repository, options.receipt);
+  if (receiptPath) await rm(receiptPath, { force: true });
+  const receipt = await publishReleasePackages(options);
+  if (receiptPath) {
+    await mkdir(dirname(receiptPath), { recursive: true });
+    await writeFile(receiptPath, JSON.stringify(receipt, null, 2) + '\n');
+  }
 }

@@ -120,10 +120,43 @@ describe('release publish script', () => {
     assert.throws(() => parsePublishOptions(['--access', 'public']), /--base-ref/);
   });
 
+  test('dry-run cannot write a publication receipt', () => {
+    assert.throws(() => parsePublishOptions(['--dry-run', '--receipt', 'artifacts/published.json']), /receipts cannot/);
+  });
+
+  test('publication receipt contains every selected published or verified package, excluding unchanged packages', async () => {
+    const release = createSampleRelease();
+    const selected = [release.packages[1], release.packages[3]];
+    const deps = fakePublishDeps({ release, changed: selected,
+      latestResult: () => ({ status: 0, stdout: JSON.stringify('0.1.0'), stderr: '' }),
+      viewResult: spec => spec === '@sinestack/ai-provider-utils@0.1.0'
+        ? { status: 0, stdout: JSON.stringify(sampleIntegrity), stderr: '' }
+        : { status: 1, stdout: JSON.stringify({ error: { code: 'E404' } }), stderr: '' },
+    });
+    const receipt = await publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps);
+    assert.deepEqual(receipt, { schemaVersion: 1, repository: release.repository, source: release.source,
+      npm: { access: 'public', tag: 'latest' }, packages: selected });
+    assert.deepEqual(deps.calls.filter(call => call[1] === 'publish').map(call => call[2].split('/').at(-1)), [selected[1].file]);
+  });
+
+  test('partial npm failure never resolves a successful batch receipt', async () => {
+    const release = createSampleRelease();
+    const selected = release.packages.slice(0, 3);
+    const deps = fakePublishDeps({ release, changed: selected, publishResult: filename =>
+      ({ status: filename.endsWith(selected[1].file) ? 1 : 0, stdout: '', stderr: 'simulated registry failure' }) });
+    let receipt;
+    await assert.rejects(async () => {
+      receipt = await publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps);
+    }, /npm publish failed/);
+    assert.equal(receipt, undefined);
+    assert.deepEqual(deps.calls.filter(call => call[1] === 'publish').map(call => call[2].split('/').at(-1)), selected.slice(0, 2).map(pkg => pkg.file));
+  });
+
   test('does nothing for an empty change set without loading artifacts or invoking commands', async () => {
     const deps = fakePublishDeps({ changed: [] });
     deps.readRelease = () => { throw new Error('unexpected artifact read'); };
-    await publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps);
+    const receipt = await publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps);
+    assert.deepEqual(receipt, { schemaVersion: 1, packages: [] });
     assert.deepEqual(deps.calls, []);
   });
   test('fails closed before publishing when an earlier release is missing or inaccessible', async () => {
