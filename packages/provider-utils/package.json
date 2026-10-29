@@ -1,6 +1,6 @@
 {
   "name": "@sinestack/ai-provider-utils",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Thin JSON and AI SDK HTTP utilities for SineStack AI asset adapters",
   "type": "module",
   "license": "Apache-2.0",

@@ -1,6 +1,6 @@
 {
   "name": "@sinestack/ai-tripo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Tripo v3 generation, model processing, rigging and animation provider for SineStack AI",
   "type": "module",
   "license": "Apache-2.0",

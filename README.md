@@ -2,7 +2,7 @@
 
 基于 **Vercel AI SDK 7** 扩展的 TypeScript 资产生成与处理 SDK。
 
-**领域接口分别设计，任务生命周期与执行引擎共用。** 生成 3D、音乐、音效等保留资产接口；模型处理、骨骼检查、绑定和角色动画使用各自的输入与结果。调用方不必使用全局操作字符串，也不必把无文件的检查结果包装成资产。
+**领域接口分别设计，任务生命周期与执行引擎共用。** 生成 3D、音乐、音效等保留资产接口；模型处理、分析、骨骼检查、绑定和角色动画使用各自的输入与结果。调用方不必使用全局操作字符串，也不必把无文件的检查结果包装成资产。
 
 重试策略、AbortSignal 合并和 callback 分发直接复用 AI SDK。submit/status/poll/result/cancel 编排仍由 SineStack AI 维护；这不是上游现成的通用 Asset executor。
 
@@ -17,8 +17,9 @@
 | `@sinestack/ai-wavespeed` | WaveSpeed prediction 提交和查询；无模型目录。 |
 | `@sinestack/ai-replicate` | Replicate prediction、固定版本及取消；无模型目录。 |
 | `@sinestack/ai-tripo` | Tripo v3 生成、Model Processing、检查、骨骼、动画及辅助资源。 |
+| `@sinestack/ai-meshy` | Meshy 生成、处理、打印分析/修复、骨骼、动画、独立动作及辅助资源。 |
 
-Provider 方法只完成一次协议操作，不添加自己的 polling、重试、abort 或 hook 引擎。模型版本保持开放，不设 SDK 型号白名单。Meshy 尚未提供真实 adapter；现有对照 fixture 用于验证其结果和多阶段任务能使用公共执行机制。
+Provider 方法只完成一次协议操作，不添加自己的 polling、重试、abort 或 hook 引擎。模型版本保持开放，不设 SDK 型号白名单。Tripo 与 Meshy 均实现对应领域契约；公共执行内核没有供应商分支。
 
 ## 从源码使用
 
@@ -37,7 +38,7 @@ npm run build
 node --experimental-strip-types examples/custom-provider.ts
 ```
 
-七个 `@sinestack/ai-*` 包使用同一发布版本。新增 Tripo 包已纳入打包和独立安装测试；提交代码不会自动发布 npm。完整流程见 [发布说明](docs/PUBLISHING.md)。
+八个 `@sinestack/ai-*` 包采用独立版本。PR 必须为变更包提交相应版本和锁文件；未变更包保留自己的版本及精确依赖。合入 main 后自动发布本次选中的变更包，分支提交不会发布。Tripo、Meshy 均纳入打包和独立安装测试，完整规则见 [发布说明](docs/PUBLISHING.md)。
 
 ## 生成：显式模型 ID 与原生 input
 
@@ -112,6 +113,31 @@ async function textureModel(sourceTaskId: string, textureVersion: string) {
 
 Tripo 共实现 20 个业务操作入口与 6 个辅助 API，包含全部生成、Model Processing/Import、Rig Check/Rig/Retarget，以及任务、上传、余额和用量。完整范围、参数及验证边界见 [Tripo 文档](docs/TRIPO.md)。
 
+## Meshy：显式阶段和独立分析
+
+```ts
+import { analyzeModel3D, processModel3D } from '@sinestack/ai-core';
+import { createMeshyProvider } from '@sinestack/ai-meshy';
+
+const meshy = createMeshyProvider(); // 服务端 MESHY_API_KEY。
+
+async function refineAndAnalyze(previewTaskId: string) {
+  const refined = await processModel3D({
+    processor: meshy.refine(), // 未指定 ai_model 时继承 preview 的模型。
+    input: { preview_task_id: previewTaskId, enable_pbr: true },
+  });
+  const report = await analyzeModel3D({
+    analyzer: meshy.analyzePrintability(),
+    input: { input_task_id: refined.taskId, printer_type: 'fdm' },
+  });
+  return { refined, report }; // 报告有问题，不等于远端任务执行失败。
+}
+```
+
+`meshy.textTo3D(modelId)` 只创建 geometry preview；`meshy.refine()` 是另一项独立任务，不隐藏第二次付费提交。Image/Multi-Image to 3D、Retexture、Remesh、Convert、Resize、UV、Rig、Animation、图像生成编辑、Text to Motion 和打印处理共 18 个能力入口。独立动作使用 `generateAnimation3D`，应用到角色使用 `animateModel`。
+
+Meshy 没有伪造独立 Rig Check。普通 DELETE 是删除任务/产物，不是取消。动作目录、任务列表、余额和用量是直接资源查询。Creative Lab 专用工作流和 SSE/watch 未纳入此次实现。完整参数、输出、文档差异和联调边界见 [Meshy 文档](docs/MESHY.md)。
+
 ## 提交、持久化与恢复
 
 资产 API 的原用法保持：
@@ -152,7 +178,7 @@ const model = wavespeed.threeD<{ description: string }>('your-provider/your-mode
 });
 ```
 
-默认输出映射识别常见 URL、文件数组和显式文件对象，不扫描 prose 或任意 metadata 字符串。特殊输出可以注入 mapResult。Tripo 使用自身端点输出解码，并保留完整原生结果；可扩展的 `TripoTaskDriver` 接受类型化输入映射及结果 decoder。
+默认输出映射识别常见 URL、文件数组和显式文件对象，不扫描 prose 或任意 metadata 字符串。特殊输出可以注入 mapResult。Tripo 与 Meshy 使用自身端点输出解码，并保留完整原生结果；可扩展的 `TripoTaskDriver`、`MeshyTaskDriver` 接受类型化输入映射及结果 decoder。
 
 旧资产结果保持非空 `assets`、非可选 `asset` 和原生 `providerMetadata.<provider>.output`。新领域结果不强制有文件，公共执行记录位于 `execution`。模型、UV、mask、多视图、动画文件不会因为一个“主文件”而被丢弃。
 
@@ -173,8 +199,9 @@ const file = await materializeAsset(result.asset, { maxBytes: 64 * 1024 * 1024 }
 | WaveSpeed | `https://api.wavespeed.ai/api/v3` | `WAVESPEED_API_KEY` |
 | Replicate | `https://api.replicate.com/v1` | `REPLICATE_API_TOKEN` |
 | Tripo | `https://openapi.tripo3d.ai/v3` | `TRIPO_API_KEY` |
+| Meshy | `https://api.meshy.ai/openapi` | `MESHY_API_KEY` |
 
-连接支持 apiKey/baseURL/headers/fetch/name，Tripo 额外支持 connectionId。配置会复制保存；实际认证不能被调用级 headers 覆盖。带凭证请求拒绝重定向；自定义 fetch 也应遵守该限制。签名存储上传独立执行，不能继承 API key 或连接 header。
+连接支持 apiKey/baseURL/headers/fetch/name，Tripo、Meshy 额外支持 connectionId。配置会复制保存；实际认证不能被调用级 headers 覆盖。带凭证请求拒绝重定向；自定义 fetch 也应遵守该限制。签名存储上传独立执行，不能继承 API key 或连接 header。
 
 提交和直接执行默认不重试；正数重试要求明确远端幂等保障。状态读取默认重试两次，由 AI SDK 决定错误分类、退避与 Retry-After。远端 failed/cancelled 不触发重新生成。
 
@@ -182,7 +209,7 @@ const file = await materializeAsset(result.asset, { maxBytes: 64 * 1024 * 1024 }
 
 五个 hooks 为 onStart/onOperation/onProgress/onFinish/onError，均 await 且忽略回调错误。鉴权、关键持久化和业务事务放在它们之外。
 
-Tripo 使用账户级 webhook 订阅，不伪造提交级 callback URL。验签、签名 event ID 去重键、宿主事务/outbox 和任务查询关联详见 [TRIPO.md](docs/TRIPO.md)。SSE/watch 和持久化调度器尚未实现。
+Tripo 与 Meshy 都不伪造提交级 callback URL。Tripo 验签和宿主事务/outbox 见 [TRIPO.md](docs/TRIPO.md)。Meshy 公共文档未提供已核验的签名协议，`parseMeshyWebhook` 明确只是非认证解析；应由宿主授权关联后唤醒既有任务查询，不能信任通知中的结果。SSE/watch 和持久化调度器尚未实现。
 
 ## 开发与发布验证
 
@@ -192,13 +219,13 @@ npm run check:upstream
 npm run verify:release
 ```
 
-`check` 包含类型、构建和 mock 测试。`check:upstream` 离线核对 3 个上游包的精确版本、许可证和 19 项源文件 hash。CI 使用 Node.js 22/24；PR 合入 `main` 后只发布发生变更的 npm 包，独立版本与合入规则见 [PUBLISHING.md](docs/PUBLISHING.md)。
+`check` 包括类型、构建和 mock 契约测试；CI 使用 Node 22/24。`check:upstream` 离线检查 3 个精确上游包和 19 项源码 hash，不联网更新基线。
 
-`verify:release` 还会打包七个 workspace、在工作区之外安装真实 tarball 并检查公开类型和运行调用，最后运行 npm publish dry-run。正式发布沿用 GitHub Actions OIDC 配置；显式发布版本、访问级别和 dist-tag，详见 [PUBLISHING.md](docs/PUBLISHING.md)。
+`verify:release` 还会打包八个 workspace、在工作区之外安装真实 tarball 并检查公开类型和运行调用，最后运行 npm publish dry-run。正式发布沿用 GitHub Actions OIDC 配置；显式发布版本、访问级别和 dist-tag，详见 [PUBLISHING.md](docs/PUBLISHING.md)。
 
 测试不调用真实计费 API，不证明供应商账号权限、所有版本参数组合或二进制模型内容正确；Cloudflare/workerd 运行验证尚未完成。
 
-示例：[自定义 provider](examples/custom-provider.ts)、[聚合平台](examples/media-providers.ts)、[资产恢复](examples/submit-and-resume.ts)、[Tripo](examples/tripo.ts)。
+示例：[自定义 provider](examples/custom-provider.ts)、[聚合平台](examples/media-providers.ts)、[资产恢复](examples/submit-and-resume.ts)、[Tripo](examples/tripo.ts)、[Meshy](examples/meshy.ts)。
 
 ## 上游与许可证
 

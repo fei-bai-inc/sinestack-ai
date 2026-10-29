@@ -36,7 +36,9 @@ export class TripoClient {
     try { return jsonValue(envelope.data, 'Tripo response data'); }
     catch (cause) { throw invalidResponse(response, cause, 'Tripo'); }
   }
-  async request(path: string, method: 'GET' | 'POST', options: TripoRequestOptions = {}, body?: JSONObject | FormData) {
+  // Keep declarations rooted in our declared provider dependency, not the transport's
+  // potentially different nested copy. Preserve the existing required headers type.
+  async request(path: string, method: 'GET' | 'POST', options: TripoRequestOptions = {}, body?: JSONObject | FormData): Promise<{ data: JSONValue; response: AssetResponse & { readonly headers: Record<string, string> } }> {
     const response = await this.transport.request(`${this.transport.baseURL}/${path}`, method, this.options(options), body);
     return { data: this.unwrap(response), response: response.response };
   }

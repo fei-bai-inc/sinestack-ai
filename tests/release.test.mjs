@@ -21,6 +21,7 @@ const expectedPackageNames = [
   '@sinestack/ai-wavespeed',
   '@sinestack/ai-replicate',
   '@sinestack/ai-tripo',
+  '@sinestack/ai-meshy',
 ];
 
 function createSampleRelease(version = '0.1.0') {
@@ -105,7 +106,7 @@ function fakePublishDeps(options = {}) {
 }
 
 describe('release metadata and archive contract', () => {
-  test('declares all seven @sinestack/ai-* packages in topological dependency order', async () => {
+  test('declares all eight @sinestack/ai-* packages in topological dependency order', async () => {
     assert.deepEqual(packageDirectories, [
       'provider',
       'provider-utils',
@@ -114,6 +115,7 @@ describe('release metadata and archive contract', () => {
       'wavespeed',
       'replicate',
       'tripo',
+      'meshy',
     ]);
     const packages = await readPackages();
     assert.deepEqual(

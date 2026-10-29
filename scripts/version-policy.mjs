@@ -72,6 +72,15 @@ export async function checkReleaseVersion(baseRef, repo = process.cwd()) {
   const sharedChanged = paths.has('tsconfig.base.json') || !isDeepStrictEqual(baseLock.packages?.['node_modules/typescript'], lock.packages?.['node_modules/typescript']);
   const changed = [];
   for (const { directory, manifest } of packages) {
+    // Only an explicitly registered, entirely new directory has no base version.
+    // Do not catch Git/JSON errors: an existing directory with missing or corrupt
+    // metadata must still fail closed rather than masquerade as a new package.
+    const baseDirectory = git('ls-tree', '--name-only', baseRef, '--', `packages/${directory}`).trim();
+    if (!baseDirectory) {
+      compareStableVersions(manifest.version, manifest.version);
+      changed.push({ directory, name: manifest.name, version: manifest.version, previousVersion: null, isNew: true });
+      continue;
+    }
     const base = baseJson(`packages/${directory}/package.json`);
     assert.equal(base.name, manifest.name, `Package ${directory} was renamed.`);
     const comparison = compareStableVersions(manifest.version, base.version);

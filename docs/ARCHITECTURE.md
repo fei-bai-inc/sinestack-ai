@@ -1,6 +1,6 @@
 # 领域接口与共享执行机制
 
-SineStack AI 的统一边界是**执行机制**，不是所有业务语义。生成、模型处理、检查、骨骼和动画可以使用不同的输入、调用入口及结果结构，通过同一个泛型 runtime 运行。仅仅都是异步 HTTP 请求或都返回 GLB，不意味着应该共用一个业务结果类型。
+SineStack AI 的统一边界是**执行机制**，不是所有业务语义。生成、模型处理、分析、检查、骨骼和动画可以使用不同的输入、调用入口及结果结构，通过同一个泛型 runtime 运行。仅仅都是异步 HTTP 请求或都返回 GLB，不意味着应该共用一个业务结果类型。
 
 本项目仍维护必要的 submit/status/poll/result/cancel 编排；重试策略、signal 合并和 callback 分发直接交给 AI SDK。这不是上游现成的通用 Asset executor，也不将 3D 数据伪装成 video 以调用私有函数。
 
@@ -12,7 +12,7 @@ SineStack AI 的统一边界是**执行机制**，不是所有业务语义。生
           \
            -> 唯一执行机制 internal/runtime.ts
           /
-领域入口 processModel3D / checkRigging / rigModel / animateModel
+领域入口 processModel3D / analyzeModel3D / checkRigging / rigModel / animateModel
     -> tasks.ts / domains.ts
 
 runtime -> TaskDriver 单次执行方法 -> provider HTTP / 原生结果解码
@@ -46,17 +46,18 @@ runtime -> TaskDriver 单次执行方法 -> provider HTTP / 原生结果解码
 export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 ```
 
-依赖仍精确锁定 ai@7.0.155；没有增加一套退避、Retry-After 或通用 abort 引擎。GET、JSON POST、multipart POST 使用公开 SDK helpers。fal 取消所需 PUT 使用单次 fetch 与 SDK response handlers；Tripo signed storage PUT 是不携带 API 凭证的独立上传，不进入认证 transport。
+依赖仍精确锁定 ai@7.0.155；没有增加一套退避、Retry-After 或通用 abort 引擎。GET、JSON POST、multipart POST 使用公开 SDK helpers。fal 取消所需 PUT、Meshy 删除所需 DELETE 使用同一个受限目的地的单次 fetch 与 SDK response handlers；DELETE 可显式接受空 HTTP 200/204，生成响应仍要求有效 JSON。Tripo signed storage PUT 是不携带 API 凭证的独立上传，不进入认证 transport。
 
 ## 独立语义与结果
 
 既有 `AssetModelV1<INPUT,KIND>` 继续承载文件生成，`generateAsset` 保证非空 assets 和非可选 asset。音乐、音效、3D 等 facade 只约束 kind，保留原生输入。fal/WaveSpeed/Replicate 仍不维护模型目录，也不强迫所有模型使用一个参数 schema。
 
-新增领域契约通过组合 `TaskDriver<INPUT,RESULT,DOMAIN>` 共用执行能力：
+领域契约通过组合 `TaskDriver<INPUT,RESULT,DOMAIN>` 共用执行能力：
 
 | 领域 | 入口与对象 | 结果 |
 |---|---|---|
 | 模型处理 | processModel3D / Model3DProcessor | 具体 processor 推导模型、部件、UV 或报告。 |
+| 模型分析 | analyzeModel3D / Model3DAnalyzer | 分析发现与报告，不要求文件，不表示对模型进行修改。 |
 | 骨骼检查 | checkRigging / RigChecker | 直接得到 riggable 等结论，无需空 assets。 |
 | 骨骼绑定 | rigModel / ModelRigger | 模型、骨骼和实际附带产物。 |
 | 角色动画 | animateModel / ModelAnimator | 文件与供应商明确报告的 clip 信息。 |
@@ -73,13 +74,13 @@ TaskDriver 提供 `doExecute`，或者完整的 `doStart/doStatus`，也可以�
 
 每个方法只做一次 provider 操作。status 返回 pending/running/completed/failed/cancelled；completed 携带泛型 result。runtime 不需要识别 Tripo、Meshy 或任何业务字段，也没有供应商专用分支。
 
-动作目录、余额等普通同步资源查询可以直接调用请求工具，不制造 task ID 和 pending 状态。独立 motion、可打印性分析及其他将来领域可以定义自己的语义接口，不要求此轮提前实现全部 endpoint 或建通用 DAG 系统。
+动作目录、余额等普通同步资源查询直接调用请求工具，不制造 task ID 和 pending 状态。Meshy 的独立 motion 走已有资产生成接口；打印分析定义独立分析语义，并复用同一执行机制。本轮没有建立通用 DAG 系统，也没有为了接入 Meshy 修改 runtime。
 
 ## 提交、恢复与身份
 
 TaskHandle 使用 `type: 'sine-ai-task'` 与 v1 标记，绑定 provider、driverId、domain、可选 modelId/connectionId，并保留已知 submittedAt 和 opaque JSON handle。这个持久化协议标记刻意保持稳定，不随 SineStack AI 包名和仓库地址变化；不要对数据库中的任务凭据做品牌字符串替换。driverId 用于稳定路由和恢复，不是调用方必须记忆的全局业务操作目录。
 
-新 receipt 的完整 JSON 信封在访问字段前检查 descriptor；提交/恢复建立深冻结快照。恢复的 driver.validateHandle 在 hooks 和认证 I/O 前运行。Tripo 校验原 baseURL、原生 route、model、connection 与安全 task ID，不接受响应中任意 URL 作为带凭据的目标。
+新 receipt 的完整 JSON 信封在访问字段前检查 descriptor；提交/恢复建立深冻结快照。恢复的 driver.validateHandle 在 hooks 和认证 I/O 前运行。Tripo 与 Meshy 校验原 baseURL、原生 route、model、connection 与安全 task ID，不接受响应中任意 URL 作为带凭据的目标。Meshy 额外绑定 text preview/refine 阶段，避免同一个 HTTP 路径的任务被错误恢复。
 
 旧 Asset receipt 保持原 specificationVersion/provider/modelId/kind/operation 结构，通过兼容边界进入 runtime。旧 provider 的内层连接校验仍由其单次方法在请求前执行。类型区分不能替代运行时凭据校验。
 
@@ -97,11 +98,15 @@ TaskHandle 使用 `type: 'sine-ai-task'` 与 v1 标记，绑定 provider、drive
 
 hooks 只有 onStart/onOperation/onProgress/onFinish/onError，通过 mergeCallbacks await 并忽略错误。日志适合放入 hooks，鉴权和必须成功的持久化不适合。
 
+Meshy 普通 DELETE 是移除任务及产物，不是取消运行中的任务。只在已核验的 task family 上声明 doDelete，未伪造 doCancel。收到 409 不表示取消成功，也不触发新任务。
+
 ## Webhook 边界
 
 旧 Asset submission webhook factory 及“通知后仍非终态则错误”的行为保持。新任务可提供一个已经认证、关联好的 notification，收到后查询同一任务；查询尚未终态则继续轮询。通知丢失会消耗等待预算，因此交付不可靠时优先普通轮询。本轮没有 SSE/watch 实现。
 
 Tripo 使用账户级订阅，不声明提交级 callback 能力。verifyTripoWebhook 使用 Web Crypto 验证原始字节与时间窗，返回签名 event.id 作为去重键。宿主应根据可信路由解析 connection，使用可信 endpoint ID，原子保存 connection + event.id 和 outbox。unsigned delivery headers 不能充当已认证的去重身份。
+
+Meshy 也使用账户级订阅，但公开文档未提供已核验的签名协议。parseMeshyWebhook 明确返回 authenticated:false；解析不等于验签，eventKey 也不是已认证身份。宿主负责可信连接和任务关联、授权、限流、持久化去重与 outbox。不能套用 Tripo 签名算法。
 
 Webhook 只唤醒已登记任务的权威查询，不直接接纳其中的生成结果，也不允许回调决定携带凭据访问的地址。
 
@@ -115,10 +120,10 @@ Webhook 只唤醒已登记任务的权威查询，不直接接纳其中的生成
 
 AssetFile 可以是 URL、binary、base64。URL 默认不下载，materializeAsset 是显式独立阶段。长期文件保存、下载网络策略和字节上限由应用控制。URL 失效不应触发重新生成收费任务。
 
-Tripo import/check/rig/retarget 和 Meshy 风格 preview/refine 均按独立阶段保存与恢复。检查引用不天然是模型资源，task ID 也不能跨供应商直接使用。隐式工作流如果将来提供，需要有明确的各阶段状态和持久化边界，不能冒充单个远端提交。
+Tripo import/check/rig/retarget 和 Meshy preview/refine 均按独立阶段保存与恢复。检查引用不天然是模型资源，task ID 也不能跨供应商直接使用。隐式工作流如果将来提供，需要有明确的各阶段状态和持久化边界，不能冒充单个远端提交。
 
-Node 22/24 CI 包括旧 provider 回归、新领域运行与类型测试、Tripo 所有 20 个端点的 mock 契约、上传/通知安全及 Meshy 风格 fixture。发布验证还会在工作区之外安装七个 `@sinestack/ai-*` tarball，检查公开声明与运行调用。版本脚本更新公共 runtime 的 User-Agent，不再修改仅作兼容层的 executor。
+Node 22/24 CI 包括旧 provider 回归、各领域运行与类型测试、Tripo 20 个操作与 Meshy 18 个能力的 mock 契约、恢复、上传/通知安全。发布验证还会在工作区之外安装八个 `@sinestack/ai-*` tarball，检查公开声明与运行调用。版本脚本更新公共 runtime 的 User-Agent，不再修改仅作兼容层的 executor。
 
-这些测试不证明真实 API 权限、所有模型版本组合和二进制资产内容正确。Meshy adapter、真实计费联调、Cloudflare/workerd 验证、SSE 与持久化调度器均不能据此宣称已完成。
+这些测试不证明真实 API 权限、所有模型版本组合和二进制资产内容正确。真实计费联调、Cloudflare/workerd 验证、Creative Lab、SSE 与持久化调度器均不能据此宣称已完成。
 
-详见 [Tripo 实现与联调边界](TRIPO.md)、[聚合 provider](MEDIA_PROVIDERS.md)、[发布](PUBLISHING.md)、[上游精确基线](UPSTREAM.md) 和 [历史迁移](MIGRATION.md)。
+详见 [Tripo](TRIPO.md)、[Meshy 实现与联调边界](MESHY.md)、[聚合 provider](MEDIA_PROVIDERS.md)、[发布](PUBLISHING.md)、[上游精确基线](UPSTREAM.md) 和 [历史迁移](MIGRATION.md)。
