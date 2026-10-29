@@ -177,6 +177,14 @@ export async function publishReleasePackages(options, deps = {}) {
     const workspaceNames = new Set(release.packages.map(pkg => pkg.name));
     const checkedDependencies = new Set();
     for (const pkg of changed) {
+      if (pkg.isNew === true) {
+        assert.equal(pkg.previousVersion, null, `New package ${pkg.name} must not invent a previous main version.`);
+        // The version policy proved the directory is absent from the base tree.
+        // Bootstrap npm versions are allowed; dependency, target integrity and
+        // latest-tag preflights below still run before any publication.
+        log(`New repository package ${pkg.name}; npm Trusted Publisher must be configured before publication.`);
+        continue;
+      }
       assert(typeof pkg.previousVersion === 'string' && pkg.previousVersion, `Missing base version for ${pkg.name}.`);
       const spec = `${pkg.name}@${pkg.previousVersion}`;
       const previous = runCommand('npm', ['view', spec, 'version', '--json', ...registryArgs], { env: viewEnv });

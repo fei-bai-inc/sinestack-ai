@@ -196,3 +196,16 @@ npm publish or gateway/cloud migration is performed by these tests.
 [Repair](https://docs.meshy.ai/en/api/repair-printability), [Split](https://docs.meshy.ai/en/api/auto-split),
 [Webhooks](https://docs.meshy.ai/en/api/webhooks), [Retention](https://docs.meshy.ai/en/api/asset-retention),
 [Balance](https://docs.meshy.ai/en/api/balance), [Usage](https://docs.meshy.ai/en/api/usage).
+
+
+## Independent package release
+
+This provider starts at `@sinestack/ai-meshy@0.1.0` and pins `@sinestack/ai-provider@0.1.2`
+(the additive analyzer contract) and `@sinestack/ai-provider-utils@0.1.2` (DELETE/empty-response support).
+The compatible core analyzer facade is released in `@sinestack/ai-core@0.1.2`. Under the repository
+0.x rules these additive changes use patch increments, not a shared workspace version bump.
+Tripo, fal, WaveSpeed and Replicate keep their existing versions and dependency pins.
+
+The new package is explicitly registered in release order, version-policy tests and isolated consumer
+validation. First publication also needs npm-side bootstrap/Trusted Publisher setup; source changes
+do not perform it. See [PUBLISHING.md](PUBLISHING.md) for the merge and automatic release rules.

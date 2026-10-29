@@ -38,7 +38,7 @@ npm run build
 node --experimental-strip-types examples/custom-provider.ts
 ```
 
-八个 `@sinestack/ai-*` 包使用同一发布版本。Tripo、Meshy 均已纳入打包和独立安装测试；提交代码不会自动发布 npm。完整流程见 [发布说明](docs/PUBLISHING.md)。
+八个 `@sinestack/ai-*` 包采用独立版本。PR 必须为变更包提交相应版本和锁文件；未变更包保留自己的版本及精确依赖。合入 main 后自动发布本次选中的变更包，分支提交不会发布。Tripo、Meshy 均纳入打包和独立安装测试，完整规则见 [发布说明](docs/PUBLISHING.md)。
 
 ## 生成：显式模型 ID 与原生 input
 
