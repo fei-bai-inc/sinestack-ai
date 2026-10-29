@@ -21,7 +21,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@sinestack/ai-provider": "0.2.0",
+    "@sinestack/ai-provider": "0.1.1",
     "@sinestack/ai-provider-utils": "0.1.1"
   },
   "publishConfig": {

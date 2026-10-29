@@ -6,6 +6,8 @@ The seven packages have **independent versions**. Only changed packages are publ
 
 1. Make all changes to `main` through a PR. The branch must include the current `main`, pass `Release version`, `Node 22` and `Node 24`, resolve review conversations, and use **Squash and merge**. Do not push directly, force-push, or delete `main`.
 2. Any changed file under `packages/<name>/` requires **that package's** stable version to be strictly newer than the version on the PR base. A shared `tsconfig.base.json` or TypeScript compiler lock change affects all package builds and requires each package to be bumped. Repository-only changes outside those inputs do not require a package bump. New package paths fail the check until their release order and publishing configuration are explicitly added. PR checks do not infer major/minor/patch from code; reviewers choose the semver appropriate for each package.
+
+   **Version selection for `0.x`:** backward-compatible fixes, refactors, dependency changes, and additive features increase the patch (`0.1.0` → `0.1.1`); a confirmed incompatible public API, type, or documented behavior change increases the minor (`0.1.0` → `0.2.0`). Assess each package independently. For `1.x` and later, use normal SemVer: patch for compatible fixes, minor for compatible features, and major for breaking changes. If compatibility is uncertain, resolve it before choosing a version; CI only checks that the chosen version increases.
 3. Bump only the affected package, for example:
 
    ```sh
