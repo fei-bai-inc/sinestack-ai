@@ -39,6 +39,7 @@ const run = (command, args, timeout) => execFileSync(command, args, {
 });
 try {
   await cp(join(repository, 'tests/package-consumer'), consumer, { recursive: true });
+  await cp(join(repository, 'examples/custom-provider.ts'), join(consumer, 'custom-provider.ts'));
   await writeFile(join(consumer, 'package.json'), JSON.stringify({
     name: 'sinestack-ai-release-consumer',
     private: true,
@@ -62,6 +63,7 @@ try {
   run(process.execPath, ['tripo.mjs'], 120_000);
   run(process.execPath, ['meshy.mjs'], 120_000);
   run(process.execPath, ['viggle.mjs'], 120_000);
+  run(process.execPath, ['--experimental-strip-types', 'custom-provider.ts'], 30_000);
   console.log(`Independent npm consumer verified all ${names.length} package tarballs, public types, and runtime execution.`);
 } finally {
   await rm(consumer, { recursive: true, force: true });

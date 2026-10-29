@@ -1,137 +1,147 @@
-# 领域接口与共享执行机制
+# Generation Models, Task Protocols, and Shared Execution
 
-SineStack AI 的统一边界是**执行机制**，不是所有业务语义。生成、模型处理、分析、检查、骨骼和动画可以使用不同的输入、调用入口及结果结构，通过同一个泛型 runtime 运行。仅仅都是异步 HTTP 请求或都返回 GLB，不意味着应该共用一个业务结果类型。
+English | [简体中文](ARCHITECTURE.zh-CN.md)
 
-本项目仍维护必要的 submit/status/poll/result/cancel 编排；重试策略、signal 合并和 callback 分发直接交给 AI SDK。这不是上游现成的通用 Asset executor，也不将 3D 数据伪装成 video 以调用私有函数。
+SineStack AI provides a general-purpose asynchronous generation and task model. `TaskDriver<INPUT, RESULT, DOMAIN>` defines typed operations; `AssetModelV1<INPUT, KIND>` defines file-generation models. The core runtime executes these contracts and maintains the lifecycle from submission through status observation, completion, and recovery.
 
-## 实现分层
+Adapters connect model APIs or job services by implementing their protocol operations. Domain interfaces describe tasks such as generation, processing, analysis, and animation with their own inputs and results. New adapters and domains reuse the same runtime. Retry policies, signal composition, and callback dispatch use AI SDK helpers.
+
+## Implementation Layers
 
 ```text
-资产入口 generateAsset / generate3D / generateMusic / ...
-    -> Asset 兼容边界 internal/executor.ts
+Asset entry points generateAsset / generate3D / generateMusic / ...
+    -> Asset compatibility boundary internal/executor.ts
           \
-           -> 唯一执行机制 internal/runtime.ts
+           -> Single execution mechanism internal/runtime.ts
           /
-领域入口 processModel3D / analyzeModel3D / checkRigging / rigModel / animateModel
+Domain entry points processModel3D / analyzeModel3D / checkRigging / rigModel / animateModel
     -> tasks.ts / domains.ts
 
-runtime -> TaskDriver 单次执行方法 -> provider HTTP / 原生结果解码
+runtime -> TaskDriver single-operation methods -> provider HTTP / native result decoding
 ```
 
-`internal/executor.ts` 保留旧 Asset 语义、错误和 receipt 的转换，不拥有第二份轮询循环。provider 包不依赖 core，也不实现等待、重试或 callback 调度。共享 runtime 对业务 `RESULT` 不设 assets/riggable/parts/clips 等字段约束。
+`internal/executor.ts` retains conversions for legacy Asset semantics, errors, and receipts; it does not own a second polling loop. Provider packages neither depend on core nor implement waiting, retries, or callback scheduling. The shared runtime imposes no assets/riggable/parts/clips field requirements on the business `RESULT`.
 
-| 层 | 职责 |
+| Layer | Responsibility |
 |---|---|
-| 应用 | 业务策略、原账号/租户授权、关键持久化、多阶段组合、文件长期保存。 |
-| 领域入口 | 用途约束、领域结果校验、自然的返回结构和类型推导。 |
-| 唯一 runtime | 提交、查询、等待、阶段重试、信号、取消/删除、执行记录与 hooks。 |
-| provider 契约 | AssetModelV1、TaskDriver、独立领域接口和任务凭据。 |
-| provider-utils | JSON/连接校验、文件工具和单次 HTTP；没有执行循环。 |
-| provider adapter | 认证、原生路由、参数、状态、结果解码及自身 handle 校验。 |
+| Application | Business policies, authorization for the original account/tenant, critical persistence, multistage composition, and long-term file storage. |
+| Domain entry points | Purpose constraints, domain result validation, natural return structures, and type inference. |
+| Single runtime | Submission, queries, waiting, stage retries, signals, cancellation/deletion, execution records, and hooks. |
+| Provider contracts | AssetModelV1, TaskDriver, independent domain interfaces, and task credentials. |
+| provider-utils | JSON/connection validation, file utilities, and single HTTP operations; no execution loop. |
+| Provider adapters | Authentication, native routes, parameters, statuses, result decoding, and validation of their own handles. |
 
-## 对上游的复用
+## Upstream Reuse
 
-| 职责 | 来源 |
+| Responsibility | Source |
 |---|---|
-| 错误重试分类、Retry-After、退避 | AI SDK prepareRetries。 |
-| 用户 signal 与 timeout 合并 | AI SDK mergeAbortSignals、原生 AbortSignal。 |
-| Callback await 与忽略错误 | AI SDK mergeCallbacks。 |
-| Delay、ID、HTTP/JSON handlers、字节转换 | @ai-sdk/provider-utils 公开 helpers。 |
-| 显式下载与内存文件 | ai createDownload、DefaultGeneratedFile。 |
-| 领域协议、receipt 与任务编排 | SineStack AI 自有代码。 |
+| Retry error classification, Retry-After, backoff | AI SDK prepareRetries. |
+| Merging user signals and timeouts | AI SDK mergeAbortSignals and native AbortSignal. |
+| Awaiting callbacks and ignoring their errors | AI SDK mergeCallbacks. |
+| Delay, IDs, HTTP/JSON handlers, byte conversion | Public @ai-sdk/provider-utils helpers. |
+| Explicit downloads and in-memory files | ai createDownload and DefaultGeneratedFile. |
+| Domain protocols, receipts, and task orchestration | SineStack AI's own code. |
 
-唯一的内部依赖入口为 [internal/sdk.ts](../packages/core/src/internal/sdk.ts)：
+The only entry point for internal dependencies is [internal/sdk.ts](../packages/core/src/internal/sdk.ts):
 
 ```ts
 export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 ```
 
-依赖仍精确锁定 ai@7.0.155；没有增加一套退避、Retry-After 或通用 abort 引擎。GET、JSON POST、multipart POST 使用公开 SDK helpers。fal 取消所需 PUT、Meshy 删除所需 DELETE 使用同一个受限目的地的单次 fetch 与 SDK response handlers；DELETE 可显式接受空 HTTP 200/204，生成响应仍要求有效 JSON。Tripo signed storage PUT 是不携带 API 凭证的独立上传，不进入认证 transport。
+The dependency remains pinned exactly to ai@7.0.155; no second backoff, Retry-After, or generic abort engine has been introduced. Under the default redirect policy, GET, JSON POST, and multipart POST use public SDK helpers. PUT and DELETE use the destination-restricted, single-fetch path with SDK response handlers. Tripo and Viggle signed storage PUTs use separate requests without API credentials.
 
-响应 handlers 可以按请求替换，默认行为保持。Viggle 使用局部 lossless JSON decoder 将不安全整数字面量保留为精确字符串；原生 retryable 与 retry_after_ms 传给既有 SDK 错误/重试机制。requestRaw 共享相同认证、地址约束与 signal，可交付单次 SSE 流或原始重定向响应，绝不跟随 Location。Viggle 的 signed PUT 也不继承 API 凭证。
+### Shared Transport Extensions
 
-## 独立语义与结果
+This section describes the current provider-utils source used by Viggle. fal/WaveSpeed/Replicate, Tripo, and Meshy retain older exact transport dependencies that use Fetch's `redirect: 'error'`; installing a newer top-level provider-utils does not replace those nested pins. The workerd evidence below is scoped accordingly.
 
-既有 `AssetModelV1<INPUT,KIND>` 继续承载文件生成，`generateAsset` 保证非空 assets 和非可选 asset。音乐、音效、3D 等 facade 只约束 kind，保留原生输入。fal/WaveSpeed/Replicate 仍不维护模型目录，也不强迫所有模型使用一个参数 schema。
+`AssetProviderTransport.request(url, method, options, body?, allowEmpty?, handlers?)` returns `{ url, statusCode, value, response: { headers, body } }`. `options` requires `headers` and `abortSignal`. The fourth argument accepts a JSON object or, for POST only, `FormData`; DELETE rejects a request body. The fifth argument explicitly permits an empty HTTP 200/204 response, used for deletion endpoints. Without that opt-in, default generation decoding still requires valid JSON.
 
-领域契约通过组合 `TaskDriver<INPUT,RESULT,DOMAIN>` 共用执行能力：
+The sixth argument, `AssetProviderResponseHandlers`, can replace `successfulResponseHandler` and/or `failedResponseHandler` using the AI SDK `ResponseHandler` contract. Success handlers return a parsed `value` and optional `responseHeaders`; the wrapper retains that value as `response.body` and falls back to HTTP headers when the handler omits them. The empty-response opt-in bypasses success decoding. Failure handlers return an `APICallError`. Defaults remain the SDK JSON handlers; Viggle supplies lossless JSON and provider-specific error decoding without changing execution policy.
 
-| 领域 | 入口与对象 | 结果 |
+`requestRaw(url, method, options, rawOptions?)` returns the original unconsumed `Response` and accepts no body. `AssetProviderRawRequestOptions` supports `accept` (default `application/json`), `redirect` (default logical `'error'`), and `failedResponseHandler`. The caller owns body reading and cancellation, including SSE streams and discarded redirect bodies. Failed HTTP responses still pass through the selected error handler.
+
+Before loading credentials, both methods validate the configured origin and path prefix. Connection authentication is applied after per-call headers. Every physical fetch uses `redirect: 'manual'` because workerd rejects Fetch's error mode. Default logical policy rejects non-success responses through the error handler; raw `'manual'` additionally returns only HTTP 301/302/303/307/308 without following `Location`. Already-followed responses or a changed response URL are rejected as non-retryable API errors. Custom fetch must honor manual mode; no adapter may follow redirects with API credentials.
+
+Signed storage clients remain separate: Viggle uses physical manual mode, rejects redirects, and sends only upload-plan headers; Tripo uses `redirect: 'error'`. Both omit browser credentials and API connection headers. Viggle's authenticated download lookup returns the signed URL without following it; the application controls the subsequent uncredentialed download.
+
+## Independent Semantics and Results
+
+The existing `AssetModelV1<INPUT,KIND>` continues to support file generation, and `generateAsset` guarantees nonempty assets and a nonoptional asset. Facades for music, sound effects, 3D, and other capabilities constrain only kind and preserve native inputs. fal/WaveSpeed/Replicate still do not maintain a model catalog or force every model to use one parameter schema.
+
+Domain contracts share execution capabilities by composing `TaskDriver<INPUT,RESULT,DOMAIN>`:
+
+| Domain | Entry point and object | Result |
 |---|---|---|
-| 模型处理 | processModel3D / Model3DProcessor | 具体 processor 推导模型、部件、UV 或报告。 |
-| 模型分析 | analyzeModel3D / Model3DAnalyzer | 分析发现与报告，不要求文件，不表示对模型进行修改。 |
-| 骨骼检查 | checkRigging / RigChecker | 直接得到 riggable 等结论，无需空 assets。 |
-| 骨骼绑定 | rigModel / ModelRigger | 模型、骨骼和实际附带产物。 |
-| 角色动画 | animateModel / ModelAnimator | 文件与供应商明确报告的 clip 信息。 |
+| Model processing | processModel3D / Model3DProcessor | The specific processor determines inferred models, parts, UVs, or reports. |
+| Model analysis | analyzeModel3D / Model3DAnalyzer | Findings and reports; files are not required, and analysis does not imply modifying the model. |
+| Rigging checks | checkRigging / RigChecker | Direct conclusions such as riggable, without empty assets. |
+| Rigging | rigModel / ModelRigger | Models, rigs, and artifacts actually included. |
+| Character animation | animateModel / ModelAnimator | Files and clip information explicitly reported by the provider. |
 
-不同用途的能力不能仅因生命周期一致而互传。接口使用函数属性及 NoInfer 保留输入约束。处理结果不采用包含所有端点可选字段的大 union；生成和检查也不共享一个强制的 `output + assets` 信封。
+Capabilities with different purposes are not interchangeable merely because their lifecycles match. Interfaces use function properties and NoInfer to retain input constraints. Processing results do not use a large union containing optional fields from every endpoint; generation and checks do not share a mandatory `output + assets` envelope either.
 
-新领域结果的业务字段位于顶层，公共执行信息放在 `execution`。高级 `waitForTask` 返回 `{ result, execution }`，其中 result 保留具体驱动类型。领域结果检查与最终组装在 runtime 的调用体内完成，所以 onFinish 观察到的是返回给调用方的同一个对象；结果校验失败走 onError。
+Business fields of new domain results are at the top level, while common execution information is under `execution`. The advanced `waitForTask` returns `{ result, execution }`, with result retaining the specific driver's type. Domain result checks and final assembly happen inside the runtime's invocation body, so onFinish observes the same object returned to the caller; result validation failures go through onError.
 
-文件本体复用 AssetFile。多文件、多个 clip、不同格式和多个 part 分别表达，不为凑统一结构捏造对应关系。没有供应商元数据时保留未知，而不是从文件数量猜 clip 数量。
+Files themselves reuse AssetFile. Multiple files, multiple clips, different formats, and multiple parts are expressed separately, without inventing relationships to fit a uniform structure. When provider metadata is absent, information remains unknown rather than guessing clip counts from file counts.
 
-## Driver 协议
+## Driver Protocol
 
-TaskDriver 提供 `doExecute`，或者完整的 `doStart/doStatus`，也可以同时提供。可选的 `doCancel` 与 `doDelete` 区分停止远端工作和删除任务/产物。`validateHandle` 是恢复前的纯同步校验点。
+TaskDriver provides `doExecute`, a complete `doStart/doStatus` pair, or both. Optional `doCancel` and `doDelete` distinguish stopping remote work from deleting tasks/artifacts. `validateHandle` is a purely synchronous validation point before resumption.
 
-每个方法只做一次 provider 操作。status 返回 pending/running/completed/failed/cancelled；completed 携带泛型 result。runtime 不需要识别 Tripo、Meshy 或任何业务字段，也没有供应商专用分支。
+Each method performs just one provider operation. Status returns pending/running/completed/failed/cancelled; completed carries the generic result. The runtime does not need to recognize Tripo, Meshy, or any business fields, and has no provider-specific branches.
 
-动作目录、余额等普通同步资源查询直接调用请求工具，不制造 task ID 和 pending 状态。Meshy 的独立 motion 走已有资产生成接口；打印分析定义独立分析语义，并复用同一执行机制。本轮没有建立通用 DAG 系统，也没有为了接入 Meshy 修改 runtime。
+Ordinary synchronous resource queries, such as motion catalogs and balances, call request utilities directly rather than manufacturing task IDs and pending statuses. Meshy's standalone motion uses the existing asset generation interface; print analysis defines independent analysis semantics and reuses the same execution mechanism. The SDK provides neither a generic DAG system nor a Meshy-specific execution loop.
 
-Viggle 使用独立工厂区分 H3 模式、角色动画、Render、图片、视频处理、角色/动作资源和场景阶段。19 个能力入口组合同一个 ViggleTaskDriver；ViggleAssetModel 只转换资产契约。角色资源就绪不强制输出文件，独立动作保留全部三套 rig，场景结果保留 session、batch、camera、SPZ 与 manifest 原生字段。无自动付费阶段串联。
+## Submission, Resumption, and Identity
 
-## 提交、恢复与身份
+TaskHandle uses `type: 'sine-ai-task'` and a v1 marker, binds provider, driverId, domain, and optional modelId/connectionId, and retains the known submittedAt and opaque JSON handle. This persisted protocol marker intentionally remains stable across SineStack AI package-name and repository-URL changes; do not replace branding strings in stored task credentials. driverId supports stable routing and resumption, not a global catalog of business operations that callers must memorize.
 
-TaskHandle 使用 `type: 'sine-ai-task'` 与 v1 标记，绑定 provider、driverId、domain、可选 modelId/connectionId，并保留已知 submittedAt 和 opaque JSON handle。这个持久化协议标记刻意保持稳定，不随 SineStack AI 包名和仓库地址变化；不要对数据库中的任务凭据做品牌字符串替换。driverId 用于稳定路由和恢复，不是调用方必须记忆的全局业务操作目录。
+The complete JSON envelope of a new receipt has its descriptors checked before fields are accessed; submission/resumption establishes deeply frozen snapshots. On resumption, driver.validateHandle runs before hooks and authenticated I/O. Tripo and Meshy validate the original baseURL, native route, model, connection, and safe task ID, and do not accept arbitrary response URLs as credential-bearing destinations. Meshy additionally binds the text preview/refine stage to prevent incorrectly resuming tasks that share the same HTTP path.
 
-新 receipt 的完整 JSON 信封在访问字段前检查 descriptor；提交/恢复建立深冻结快照。恢复的 driver.validateHandle 在 hooks 和认证 I/O 前运行。Tripo 与 Meshy 校验原 baseURL、原生 route、model、connection 与安全 task ID，不接受响应中任意 URL 作为带凭据的目标。Meshy 额外绑定 text preview/refine 阶段，避免同一个 HTTP 路径的任务被错误恢复。
+Legacy Asset receipts retain their specificationVersion/provider/modelId/kind/operation structure and enter the runtime through the compatibility boundary. Legacy providers still validate their inner connection in their single-operation methods before requests. Type distinctions are no substitute for runtime credential validation.
 
-旧 Asset receipt 保持原 specificationVersion/provider/modelId/kind/operation 结构，通过兼容边界进入 runtime。旧 provider 的内层连接校验仍由其单次方法在请求前执行。类型区分不能替代运行时凭据校验。
+Neither receipt type stores API keys. Connection identifiers only help validate bindings; they do not replace the application's responsibility to restore the same account/tenant and perform authorization. Without a stable connectionId, the same baseURL alone cannot identify whether an API key now belongs to a different account.
 
-两种 receipt 都不保存 API key。连接标识只能帮助校验绑定，不能替代应用恢复同一账号/租户并执行授权。无稳定 connectionId 时，仅凭同一个 baseURL 无法识别 API key 是否已换账号。
+After `startTask` or `startAsset` returns, explicitly await application persistence. If saving fails, keep trying to save the original handle rather than resubmitting. Failed resumption queries, webhook errors, remote failed states, and local aborts never enter a resubmission path.
 
-`startTask` 或 `startAsset` 返回后，显式 await 应用持久化。保存失败时继续保存原 handle，不重新提交。恢复查询失败、webhook 异常、远端 failed 或本地中止都不进入重新提交路径。
+## Retries, Timeouts, and Observation
 
-## 重试、超时与观察
+Submission/direct execution/cancellation/deletion default to 0 retries; status reads default to 2. Positive submission or direct-execution retries require the provider to explicitly declare idempotency support. The idempotency key for a logical submission is created outside the retry closure; returned-credential validation also happens outside it, so local validation failures cannot recreate an already accepted task.
 
-提交/直接执行/取消/删除默认重试 0 次，状态读取默认 2 次。正数提交或直接执行重试需要 provider 明确声明幂等能力。同一逻辑提交的幂等键在 retry 闭包外产生；返回凭据校验也在闭包外，避免已受理的任务因本地验证失败被再次创建。
+Actual retry classification and backoff are determined by prepareRetries. No onAttempt/onRetry hooks are added, and upstream network error policies are not reimplemented.
 
-真实 retry 分类与退避由 prepareRetries 决定。不新增 onAttempt/onRetry，不重新实现上游网络错误策略。
+By default, polling queries immediately and then every 2 seconds; poll.timeoutMs defaults to 10 minutes, while timeoutMs constrains the current invocation's signal. Cancellation is cooperative: it does not forcibly terminate provider Promises that ignore the signal or hooks that never return. Local abort does not invoke remote cancel/delete. poll.delay replaces only sleep and does not provide durable replay.
 
-默认轮询首次立即查询，后续每 2 秒；poll.timeoutMs 默认 10 分钟，timeoutMs 约束本次调用信号。取消是合作式的：不强制结束忽略 signal 的 provider Promise 或不返回的 hook。本地 abort 不调用远端 cancel/delete。poll.delay 仅替换 sleep，不提供持久化重放。
+The only hooks are onStart/onOperation/onProgress/onFinish/onError; mergeCallbacks awaits them and ignores their errors. Hooks are suitable for logging, not authorization or persistence that must succeed.
 
-hooks 只有 onStart/onOperation/onProgress/onFinish/onError，通过 mergeCallbacks await 并忽略错误。日志适合放入 hooks，鉴权和必须成功的持久化不适合。
+Ordinary Meshy DELETE removes the task and its artifacts; it does not cancel a running task. Domain drivers declare doDelete, while asset tasks use tasks.delete; no doCancel is fabricated. A 409 response does not indicate successful cancellation and does not trigger a new task. Tripo exposes neither cancellation nor deletion; fal/Replicate support asset cancellation, while WaveSpeed does not. None of these three aggregator adapters exposes deletion. A public entry point does not mean every provider implements that capability.
 
-Meshy 普通 DELETE 是移除任务及产物，不是取消运行中的任务。只在已核验的 task family 上声明 doDelete，未伪造 doCancel。收到 409 不表示取消成功，也不触发新任务。
+## Webhook Boundaries
 
-## Webhook 边界
+The legacy Asset submission webhook factory and its error behavior when a task is still nonterminal after notification are preserved. New tasks can supply an already authenticated and correlated notification; on receipt, the same task is queried, and polling continues if it is not yet terminal. Lost notifications consume the waiting budget, so prefer ordinary polling when delivery is unreliable. Viggle's `renders.events` opens one SSE stream with optional `lastEventId`; the caller owns reconnection. Core has no generic SSE/watch scheduler.
 
-旧 Asset submission webhook factory 及“通知后仍非终态则错误”的行为保持。新任务可提供一个已经认证、关联好的 notification，收到后查询同一任务；查询尚未终态则继续轮询。通知丢失会消耗等待预算，因此交付不可靠时优先普通轮询。Viggle Render events 通过 eventsource-parser 解析单次 SSE，支持 Last-Event-ID，但不自动重连，不拥有第二套执行内核；通用 watch 尚未实现。
+Tripo uses account-level subscriptions and does not declare submission-level callback support. verifyTripoWebhook uses Web Crypto to verify raw bytes and the time window, and returns the signed event.id as the deduplication key. The host should resolve the connection from trusted routing, use a trusted endpoint ID, and atomically persist connection + event.id with an outbox. Unsigned delivery headers cannot serve as authenticated deduplication identities.
 
-Tripo 使用账户级订阅，不声明提交级 callback 能力。verifyTripoWebhook 使用 Web Crypto 验证原始字节与时间窗，返回签名 event.id 作为去重键。宿主应根据可信路由解析 connection，使用可信 endpoint ID，原子保存 connection + event.id 和 outbox。unsigned delivery headers 不能充当已认证的去重身份。
+Meshy also uses account-level subscriptions, but its public documentation does not provide a verified signature protocol. parseMeshyWebhook explicitly returns authenticated:false; parsing is not signature verification, and eventKey is not an authenticated identity. The host is responsible for trusted connection and task correlation, authorization, rate limiting, durable deduplication, and an outbox. The Tripo signature algorithm must not be applied to Meshy.
 
-Meshy 也使用账户级订阅，但公开文档未提供已核验的签名协议。parseMeshyWebhook 明确返回 authenticated:false；解析不等于验签，eventKey 也不是已认证身份。宿主负责可信连接和任务关联、授权、限流、持久化去重与 outbox。不能套用 Tripo 签名算法。
+Webhooks only wake authoritative queries for registered tasks. Their generated results are not accepted directly, and callbacks cannot choose credential-bearing request destinations.
 
-Webhook 只唤醒已登记任务的权威查询，不直接接纳其中的生成结果，也不允许回调决定携带凭据访问的地址。
+## Legacy Asset Compatibility Requirements
 
-## 旧 Asset 兼容要求
+Nonempty assets, nonoptional asset, legacy auto/direct/async routing, and dual-capability models are preserved. Query can return failed/cancelled; only wait/generate convert them to terminal exceptions. Legacy AssetExecutionError/AssetTimeoutError/AssetAbortError, ASSET_* codes, phase, and operation remain supported.
 
-保留非空 assets、非可选 asset、旧 auto/direct/async 选路及双能力模型；query 可以返回 failed/cancelled，wait/generate 才将其转换成终态异常。旧 AssetExecutionError/AssetTimeoutError/AssetAbortError、ASSET_* code、phase 与 operation 继续支持。
+When a status read returns `failed` or `cancelled`, waiting/generation preserves its available `response` and `providerMetadata` in `TaskExecutionError` / `TaskAbortError`. The runtime wrapper adds the current `task` and `phase` while retaining diagnostics and cause; the Asset boundary preserves them in the corresponding Asset errors and `operation`. Failed jobs use `TASK_JOB_FAILED` / `ASSET_JOB_FAILED`. These fields are optional provider-supplied diagnostics, not a guarantee for every thrown network, validation, or local-abort error. Redact signed URLs and account/input data before logging.
 
-原有输入推导、kind 检查、hooks 字段和时机、幂等门及凭据快照保持。Task 与 Asset 的错误/receipt 转换仅存在于兼容边界，不污染通用 runtime 或 provider。
+Existing input inference, kind checks, hook fields and timing, idempotency gates, and credential snapshots are preserved. Task/Asset error and receipt conversions exist only at the compatibility boundary, without leaking into the generic runtime or providers.
 
-failed/cancelled 状态与终态错误可携带 response/providerMetadata；runtime 和 Asset 兼容转换将原始诊断传递到调用方及 onError，保留 cause、阶段、code 和 receipt。HTTP 200 内的业务失败因此仍可查到供应商 request_id、details 与 remediation。
+## Files, Multiple Stages, and Verification
 
-## 文件、多阶段与验证
+AssetFile can be URL, binary, or base64. URLs are not downloaded by default; materializeAsset is an explicit, independent stage. The application controls long-term file storage, download network policy, and byte limits. An expired URL must not trigger regeneration of a billable task.
 
-AssetFile 可以是 URL、binary、base64。URL 默认不下载，materializeAsset 是显式独立阶段。长期文件保存、下载网络策略和字节上限由应用控制。URL 失效不应触发重新生成收费任务。
+Tripo import/check/rig/retarget and Meshy preview/refine are each saved and resumed as separate stages. A check reference is not inherently a model resource, and task IDs cannot be used directly across providers. If implicit workflows are offered in the future, they must have explicit stage states and persistence boundaries rather than masquerading as a single remote submission.
 
-Tripo import/check/rig/retarget 和 Meshy preview/refine 均按独立阶段保存与恢复。检查引用不天然是模型资源，task ID 也不能跨供应商直接使用。隐式工作流如果将来提供，需要有明确的各阶段状态和持久化边界，不能冒充单个远端提交。
+Node 22/24 CI checks cover legacy provider regressions, domain runtime and type tests, mock contracts for 20 Tripo operations, 18 Meshy capabilities and Viggle, resumption, and upload/notification security. Release verification installs all nine `@sinestack/ai-*` tarballs outside the workspace to check public declarations and runtime calls. Packages are independently versioned; core's version script updates the public runtime's User-Agent, not the compatibility executor. This describes repository check scope, not a new verification result.
 
-Node 22/24 CI 包括旧 provider 回归、各领域运行与类型测试、Tripo 20 个操作、Meshy 18 个能力与 Viggle 19 个能力的 mock 契约、恢复、上传/通知安全。发布验证还会在工作区之外安装九个 `@sinestack/ai-*` tarball，检查公开声明与运行调用。版本脚本更新公共 runtime 的 User-Agent，不再修改仅作兼容层的 executor。
+The [workerd fixture](../tests/workerd/README.md) records four real-runtime checks with mocked HTTP for Viggle/core recovery and lossless seeds, multipart Blob handling, SSE parsing, and signed uploads. This is not Cloudflare deployment or all-provider acceptance. Tests do not prove live API permissions, all model-version combinations, binary asset contents, Meshy Creative Lab/SSE support, or a durable scheduler.
 
-Viggle 另在真实 workerd 中执行任务恢复、精确 seed、multipart、SSE 与签名 PUT 用例，未启用 nodejs_compat，使用注入的 mock fetch。底层请求使用 workerd 支持的 manual 重定向模式，并由认证 transport 默认拒绝 3xx；signed PUT 也显式拒绝跳转。可复现用例见 [Worker 验证](../tests/workerd/README.md)。
-
-这些测试不证明真实 API 权限、所有模型版本组合和二进制资产内容正确，也不代表已部署到 Cloudflare。真实计费联调、Creative Lab、通用 watch 与持久化调度器仍有各自独立的验收边界。
-
-详见 [Tripo](TRIPO.md)、[Meshy 实现与联调边界](MESHY.md)、[Viggle 实现与联调边界](VIGGLE.md)、[聚合 provider](MEDIA_PROVIDERS.md)、[发布](PUBLISHING.md)、[上游精确基线](UPSTREAM.md) 和 [历史迁移](MIGRATION.md)。
+See [Tripo](TRIPO.md), [Meshy implementation and integration boundaries](MESHY.md), [Viggle](VIGGLE.md), [aggregator providers](MEDIA_PROVIDERS.md), [publishing](PUBLISHING.md), [the exact upstream baseline](UPSTREAM.md), and [historical migration](MIGRATION.md).

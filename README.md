@@ -1,260 +1,168 @@
 # SineStack AI
 
-基于 **Vercel AI SDK 7** 扩展的 TypeScript 资产生成与处理 SDK。
+English | [简体中文](README.zh-CN.md)
 
-**领域接口分别设计，任务生命周期与执行引擎共用。** 生成 3D、音乐、音效等保留资产接口；模型处理、分析、骨骼检查、绑定和角色动画使用各自的输入与结果。调用方不必使用全局操作字符串，也不必把无文件的检查结果包装成资产。
+SineStack AI is a **compatible extension of Vercel AI SDK 7**, providing a shared model for asynchronous generation and tasks. It reuses AI SDK types and execution utilities, so you can use it alongside existing AI SDK calls. Define typed inputs, results, and service operations to reuse submission, status queries, polling, recovery, execution controls, and lifecycle callbacks across generation, processing, analysis, and resource creation.
 
-重试策略、AbortSignal 合并和 callback 分发直接复用 AI SDK。submit/status/poll/result/cancel 编排仍由 SineStack AI 维护；这不是上游现成的通用 Asset executor。
+The supported AI SDK version is `ai@7.0.155`. Provider packages implement these contracts for direct use or as references for your own integrations.
 
-## 包与维护边界
+## Core concepts
 
-| 包 | 职责 |
-|---|---|
-| `@sinestack/ai-provider` | 既有 Asset 协议、通用 TaskDriver、领域契约、文件与任务凭据。 |
-| `@sinestack/ai-core` | 唯一执行内核、领域入口、旧 Asset 兼容边界、恢复和显式文件物化。 |
-| `@sinestack/ai-provider-utils` | JSON/连接校验、常见文件解析、基于 AI SDK 的单次 HTTP 工具。 |
-| `@sinestack/ai-fal` | fal queue 提交、查询、结果和取消；无模型目录。 |
-| `@sinestack/ai-wavespeed` | WaveSpeed prediction 提交和查询；无模型目录。 |
-| `@sinestack/ai-replicate` | Replicate prediction、固定版本及取消；无模型目录。 |
-| `@sinestack/ai-tripo` | Tripo v3 生成、Model Processing、检查、骨骼、动画及辅助资源。 |
-| `@sinestack/ai-meshy` | Meshy 生成、处理、打印分析/修复、骨骼、动画、独立动作及辅助资源。 |
-| `@sinestack/ai-viggle` | Viggle 视频、图片、角色/动作资源、独立骨骼动作、场景与超分辨率。 |
+| Contract | What it represents | How you extend it |
+|---|---|---|
+| `TaskDriver<INPUT, RESULT, DOMAIN>` | A task with its own input, result, and domain | Implement `doStart` / `doStatus` for asynchronous work, or `doExecute` for direct execution through domain APIs |
+| `AssetModelV1<INPUT, KIND>` | A generation model that produces files | Implement `doStart` / `doStatus` or `doGenerate`; return URL, binary, or base64 assets |
+| `TaskHandle` / `AssetOperation` | A serializable reference to submitted work | Persist the complete receipt and restore it with the matching model and connection |
 
-Provider 方法只完成一次协议操作，不添加自己的 polling、重试、abort 或 hook 引擎。模型版本保持开放，不设 SDK 型号白名单。Tripo 与 Meshy 均实现对应领域契约；公共执行内核没有供应商分支。
+`@sinestack/ai-provider` defines these contracts. `@sinestack/ai-core` executes them. Optional `@sinestack/ai-provider-utils` helpers cover HTTP, JSON, and file mapping for adapter authors.
 
-## 从源码使用
+Task results can contain files, reports, generated content, or resource records. Input and result types belong to each task; new domains and asset kinds can be added through the public interfaces.
 
-通过仓库 npm workspaces 使用，需要 Node.js 22 或 24：
+## Included providers
+
+The library includes six ready-to-use provider packages built on these contracts. Each package provides typed model and task interfaces; its guide covers installation, credentials, native parameters, and examples.
+
+| Provider | Package | Capabilities |
+|---|---|---|
+| [Tripo](packages/tripo/README.md) | `@sinestack/ai-tripo` | 3D/image generation, model processing, rig checks, rigging, and animation |
+| [Meshy](packages/meshy/README.md) | `@sinestack/ai-meshy` | 3D/image generation, preview/refine, print analysis, rigging, animation, and motion |
+| [Viggle](packages/viggle/README.md) | `@sinestack/ai-viggle` | Video/image generation, character animation, motion export, and Gaussian-splat scenes |
+| [fal](packages/fal/README.md) | `@sinestack/ai-fal` | Native-input asset generation, queue status, results, and cancellation |
+| [WaveSpeed](packages/wavespeed/README.md) | `@sinestack/ai-wavespeed` | Native-input asset generation, prediction status, and result mapping |
+| [Replicate](packages/replicate/README.md) | `@sinestack/ai-replicate` | Named or pinned model predictions, status, results, and cancellation |
+
+Provider calls use your service account and may incur charges. Keep credentials server-side. Custom adapters can also connect self-hosted models or an application's existing job backend.
+
+## Install
+
+Use Node.js 22 or 24 with ESM:
 
 ```sh
-git clone https://github.com/fei-bai-inc/sinestack-ai.git
-cd sinestack-ai
+npm install @sinestack/ai-core @sinestack/ai-provider ai@7.0.155
+```
+
+Install a provider package when using an existing integration, or implement a model against the contracts below.
+
+## Define an asynchronous task
+
+Wrap the client for your generation service in a `TaskDriver`. This example defines a document-generation task with a structured result:
+
+```ts
+import type { JSONValue, TaskDriver, TaskStatus } from '@sinestack/ai-provider';
+
+interface DocumentInput { prompt: string }
+interface DocumentResult { sections: readonly string[] }
+
+// The application supplies its service client. read() maps native states/results
+// to TaskStatus: pending, running, completed, failed, or cancelled.
+interface DocumentJobs {
+  create(input: DocumentInput, signal: AbortSignal): Promise<{ id: string }>;
+  read(id: string, signal: AbortSignal): Promise<TaskStatus<DocumentResult>>;
+}
+
+function jobId(handle: JSONValue): string {
+  if (handle === null || typeof handle !== 'object' || Array.isArray(handle) ||
+      !('id' in handle) || typeof handle.id !== 'string' || !handle.id.trim()) {
+    throw new TypeError('Invalid document job handle');
+  }
+  return handle.id;
+}
+
+export function createDocumentTask(
+  jobs: DocumentJobs,
+  connectionId: string,
+): TaskDriver<DocumentInput, DocumentResult, 'document.generate'> {
+  return {
+    specificationVersion: 'v1',
+    provider: 'my-generation-service',
+    driverId: 'document-generator',
+    domain: 'document.generate',
+    connectionId,
+    validateHandle(handle) { jobId(handle); },
+    async doStart({ input, abortSignal }) {
+      const { id } = await jobs.create(input, abortSignal);
+      return { handle: { id } };
+    },
+    doStatus({ handle, abortSignal }) {
+      return jobs.read(jobId(handle), abortSignal);
+    },
+  };
+}
+```
+
+Each method performs one service operation. Core supplies the polling loop, progress callbacks, timeout/abort signals, and stage-specific retries. Add `doCancel` or `doDelete` when your service supports those operations. See the [provider authoring guide](packages/provider/README.md) for the full contract.
+
+## Submit, persist, and resume
+
+Use the task above with your `DocumentJobs` client. The following functions submit a document, save its handle, and resume it in a later process:
+
+```ts
+import { readFile, writeFile } from 'node:fs/promises';
+import { startTask, waitForTask } from '@sinestack/ai-core';
+import type { TaskHandle } from '@sinestack/ai-provider';
+
+async function submitDocument(jobs: DocumentJobs, prompt: string) {
+  const model = createDocumentTask(jobs, 'documents-account');
+  const { task } = await startTask({ model, input: { prompt } });
+  try {
+    await writeFile('document-task.json', JSON.stringify(task));
+  } catch (cause) {
+    throw Object.assign(new Error('Could not save the accepted task', { cause }), { task });
+  }
+  return task;
+}
+
+async function resumeDocument(jobs: DocumentJobs) {
+  const model = createDocumentTask(jobs, 'documents-account');
+  const task: TaskHandle<'document.generate'> = JSON.parse(
+    await readFile('document-task.json', 'utf8'),
+  );
+  const { result } = await waitForTask({ model, task });
+  return result.sections;
+}
+```
+
+Use a database or a separate file per job in an application. Recovery queries the saved task with the original authorized connection; storage and worker scheduling remain application-owned.
+
+| Operation | Generic tasks | File-generation models |
+|---|---|---|
+| Submit | `startTask` → `task` | `startAsset` → `operation` |
+| Read status once | `getTaskStatus` | `getAssetStatus` |
+| Wait for the result | `waitForTask` → `{ result, execution }` | `waitForAsset` → asset result |
+| Request remote cancellation | `cancelTask` | `cancelAsset` |
+| Delete remote resources | `deleteTask` when supported | Provider resource API |
+
+Configure waiting with `poll`, `timeoutMs`, and `abortSignal`; report progress through `hooks`. `retry` controls attempts by stage. Submission retries require declared idempotency support, and local abort ends local waiting rather than cancelling the remote job.
+
+## File generation and domain interfaces
+
+Use `AssetModelV1` when the result is one or more files. `generateAsset({ model, input })` runs generation through completion; `startAsset` and `waitForAsset` split the same work into resumable steps. Results expose the primary `asset`, all `assets`, and provider metadata. `materializeAsset` reads a URL, binary, or base64 asset into bytes.
+
+The SDK also provides entry points for common task domains:
+
+| Use case | Entry points |
+|---|---|
+| Typed file generation | `generate3D`, `generateMusic`, `generateSoundEffect`, `generateAnimation3D` |
+| Model processing and analysis | `processModel3D`, `analyzeModel3D`, `checkRigging` |
+| Rigging and character animation | `rigModel`, `animateModel` |
+
+These interfaces retain domain-specific inputs and results while using the shared execution runtime. For another task domain, define its `TaskDriver` and use the generic task APIs. For another file category, define an asset kind and use `generateAsset`.
+
+## Documentation and development
+
+- **Build an integration:** [provider contracts](packages/provider/README.md), [transport and mapping utilities](packages/provider-utils/README.md), [custom file model example](examples/custom-provider.ts).
+- **Use the runtime:** [core API](packages/core/README.md), [task architecture](docs/ARCHITECTURE.md), [persistence examples](examples/submit-and-resume.ts).
+- **Provider guides:** [Tripo](docs/TRIPO.md), [Meshy](docs/MESHY.md), [Viggle](docs/VIGGLE.md), [media providers](docs/MEDIA_PROVIDERS.md).
+- **Project reference:** [AI SDK baseline](docs/UPSTREAM.md), [migration](docs/MIGRATION.md), [security](SECURITY.md), [workerd checks](tests/workerd/README.md).
+- **Contribute:** [development guide](CONTRIBUTING.md), [release process](docs/PUBLISHING.md), [changelog](CHANGELOG.md).
+
+From a repository checkout:
+
+```sh
 npm ci
 npm run build
-```
-
-无 key、无网络的本地文件生成示例：
-
-```sh
-node --experimental-strip-types examples/custom-provider.ts
-```
-
-九个 `@sinestack/ai-*` 包采用独立版本。PR 必须为变更包提交相应版本和锁文件；未变更包保留自己的版本及精确依赖。合入 main 后自动发布本次选中的变更包，分支提交不会发布。Tripo、Meshy、Viggle 均纳入打包和独立安装测试，完整规则见 [发布说明](docs/PUBLISHING.md)。
-
-## 生成：显式模型 ID 与原生 input
-
-fal、WaveSpeed、Replicate 提供相同的资产工厂：
-
-```ts
-provider.music(modelId, mapping?);
-provider.threeD(modelId, mapping?);
-provider.soundEffect(modelId, mapping?);
-provider.animation3D(modelId, mapping?);
-provider.asset(modelId, { kind, mapInput?, mapResult? });
-```
-
-它们只设置资产 kind，原样传递模型原生 JSON，不把某个模型的 schema 强加给整个平台。调用方负责选择实际存在的模型及其参数。
-
-```ts
-import { generate3D } from '@sinestack/ai-core';
-import { createWaveSpeedAssetProvider } from '@sinestack/ai-wavespeed';
-
-const wavespeed = createWaveSpeedAssetProvider();
-const modelId = process.env.THREE_D_MODEL_ID;
-if (!modelId) throw new Error('Set THREE_D_MODEL_ID');
-
-const result = await generate3D({
-  model: wavespeed.threeD(modelId),
-  input: { prompt: 'A wooden lantern' }, // 使用所选模型要求的原生字段。
-});
-console.log(result.asset, result.assets);
-```
-
-`generateMusic`、`generate3D`、`generateSoundEffect`、`generateAnimation3D` 是按 kind 约束的薄入口，均进入 `generateAsset`。旧平铺字段重载仍保留并标记 deprecated，仅用于明确接收这些字段的外部 mapper 或自定义模型。
-
-`providerOptions.<provider>` 可以补充原生参数，不能覆盖 input 或 mapInput 已提供的同名字段。无需为同协议的新模型更新 SDK。
-
-## 处理、检查、骨骼与动画：不同语义，同一执行内核
-
-```ts
-import { processModel3D, checkRigging, rigModel, animateModel } from '@sinestack/ai-core';
-import { createTripoProvider } from '@sinestack/ai-tripo';
-
-const tripo = createTripoProvider(); // 服务端 TRIPO_API_KEY。
-
-async function animateCharacter(originalModelTaskId: string, rigVersion: string, preset: string) {
-  const report = await checkRigging({
-    checker: tripo.rigCheck(),
-    input: { input: originalModelTaskId },
-  });
-  if (!report.riggable) return { report }; // 检测正常完成，不是远端执行失败。
-
-  const rigged = await rigModel({
-    rigger: tripo.rig(rigVersion),
-    input: { input: originalModelTaskId, rig_type: 'biped' },
-  });
-  const animated = await animateModel({
-    animator: tripo.retarget(),
-    input: { input: rigged.taskId, animation: preset },
-  });
-  return { report, rigged, animated };
-}
-
-async function textureModel(sourceTaskId: string, textureVersion: string) {
-  return processModel3D({
-    processor: tripo.texture(textureVersion),
-    input: { input: sourceTaskId, texture_prompt: { text: 'painted wood' } },
-  });
-}
-```
-
-这些调用会创建实际任务；上面的组合示意不替代生产系统的逐阶段持久化。Rig 使用原模型，不使用 Rig Check 的任务 ID；Retarget 使用 Rig 的任务 ID。
-
-处理结果有模型、部件、预览或报告；检查直接返回 `riggable`；动画保留实际文件与供应商报告的 clip 信息。字段由具体能力类型推导，不是一份全局大 union。公共执行器不理解这些业务字段。
-
-Tripo 共实现 20 个业务操作入口与 6 个辅助 API，包含全部生成、Model Processing/Import、Rig Check/Rig/Retarget，以及任务、上传、余额和用量。完整范围、参数及验证边界见 [Tripo 文档](docs/TRIPO.md)。
-
-## Meshy：显式阶段和独立分析
-
-```ts
-import { analyzeModel3D, processModel3D } from '@sinestack/ai-core';
-import { createMeshyProvider } from '@sinestack/ai-meshy';
-
-const meshy = createMeshyProvider(); // 服务端 MESHY_API_KEY。
-
-async function refineAndAnalyze(previewTaskId: string) {
-  const refined = await processModel3D({
-    processor: meshy.refine(), // 未指定 ai_model 时继承 preview 的模型。
-    input: { preview_task_id: previewTaskId, enable_pbr: true },
-  });
-  const report = await analyzeModel3D({
-    analyzer: meshy.analyzePrintability(),
-    input: { input_task_id: refined.taskId, printer_type: 'fdm' },
-  });
-  return { refined, report }; // 报告有问题，不等于远端任务执行失败。
-}
-```
-
-`meshy.textTo3D(modelId)` 只创建 geometry preview；`meshy.refine()` 是另一项独立任务，不隐藏第二次付费提交。Image/Multi-Image to 3D、Retexture、Remesh、Convert、Resize、UV、Rig、Animation、图像生成编辑、Text to Motion 和打印处理共 18 个能力入口。独立动作使用 `generateAnimation3D`，应用到角色使用 `animateModel`。
-
-Meshy 没有伪造独立 Rig Check。普通 DELETE 是删除任务/产物，不是取消。动作目录、任务列表、余额和用量是直接资源查询。Creative Lab 专用工作流和 SSE/watch 未纳入此次实现。完整参数、输出、文档差异和联调边界见 [Meshy 文档](docs/MESHY.md)。
-
-## Viggle：视频、资源与场景
-
-```ts
-import { generateAsset, generateAnimation3D, startTask, waitForTask } from '@sinestack/ai-core';
-import { createViggleProvider } from '@sinestack/ai-viggle';
-
-const viggle = createViggleProvider({ connectionId: 'production-account' }); // VIGGLE_API_KEY
-const video = await generateAsset({
-  model: viggle.textToVideo(),
-  input: { prompt: 'A paper airplane flies through a sunlit office', quality: 'high', duration_s: 5 },
-  poll: { intervalMs: 3000 },
-});
-const motion = await generateAnimation3D({
-  model: viggle.textToMotion({ format: 'fbx' }),
-  input: { text: 'A person waves with the right hand', duration_seconds: 5 },
-  poll: { intervalMs: 3000 },
-});
-console.log(video.assets, motion.assets); // Motion 保留三套 rig 导出。
-```
-
-H3 的文字、首帧、首尾帧和参考素材模式分别提供工厂；角色动画、Render 和图片生成保留原生 multipart 参数及 Blob。`upscaleVideo()`、角色/动作资源创建和场景阶段使用 `startTask` / `waitForTask`；没有文件的资源完成结果无需伪造 assets。场景视图生成与重建分别提交、保存和恢复。
-
-`renders.prepare/upload` 显式准备草稿与上传，`renderDraft()` 才创建生成任务。`renders.events()` 是一次 SSE 观察，不自动重连或重新生成；`renders.download()` 返回签名下载地址。远端失败保留原始诊断，超出 JavaScript 安全整数范围的 seed 保留为精确十进制字符串。完整 19 个能力入口、资源接口与限制见 [Viggle 文档](docs/VIGGLE.md)。
-
-## 提交、持久化与恢复
-
-资产 API 的原用法保持：
-
-```ts
-const started = await startAsset({ model, input });
-await saveOperation(started.operation);
-const result = await waitForAsset({ model, operation: started.operation });
-```
-
-新领域任务使用公共生命周期入口：
-
-```ts
-import { startTask, getTaskStatus, waitForTask } from '@sinestack/ai-core';
-
-const model = tripo.rig(selectedRigVersion);
-const started = await startTask({ model, input: { input: originalModelTaskId } });
-await saveTask(started.task);
-
-const status = await getTaskStatus({ model, task: started.task });
-const completed = await waitForTask({ model, task: started.task });
-console.log(completed.result); // 保留该能力的精确结果类型。
-```
-
-示例中的模型、输入、版本、源任务和持久化方法由应用提供。`startTask` 只提交；`getTaskStatus` 只观察一次；`waitForTask` 不重新提交。`cancelTask` 和 `deleteTask` 分别表示远端取消、删除，不与本地 abort 混用。驱动不支持的能力在请求前报错。
-
-持久化失败时保留已返回的 handle，补写或恢复，不能因保存失败重复创建计费任务。每个阶段独立保存。hooks 是观察回调，不承担必须成功的业务事务。
-
-任务凭据有独立运行时标记，并绑定 provider、driver、domain、可选 model/connection；旧 Asset receipt 继续接受。包和仓库改名不改变 v1 任务的 `sine-ai-task` 协议标记，已保存任务无需重写或重提。恢复需要原授权账号与连接。凭据不保存 API key，也不能替代租户鉴权。跨供应商资源传递需要显式保存/上传文件，不能互传原生 task ID。
-
-## 可选外部映射与文件
-
-资产的 `mapInput`、`mapResult` 可以分别提供，也支持外部类实例及其原型方法：
-
-```ts
-const model = wavespeed.threeD<{ description: string }>('your-provider/your-model', {
-  mapInput: input => ({ prompt: input.description }),
-});
-```
-
-默认输出映射识别常见 URL、文件数组和显式文件对象，不扫描 prose 或任意 metadata 字符串。特殊输出可以注入 mapResult。Tripo 与 Meshy 使用自身端点输出解码，并保留完整原生结果；可扩展的 `TripoTaskDriver`、`MeshyTaskDriver` 接受类型化输入映射及结果 decoder。
-
-旧资产结果保持非空 `assets`、非可选 `asset` 和原生 `providerMetadata.<provider>.output`。新领域结果不强制有文件，公共执行记录位于 `execution`。模型、UV、mask、多视图、动画文件不会因为一个“主文件”而被丢弃。
-
-URL 默认不下载。需要 bytes 时显式使用：
-
-```ts
-import { materializeAsset } from '@sinestack/ai-core';
-const file = await materializeAsset(result.asset, { maxBytes: 64 * 1024 * 1024 });
-```
-
-生成与下载是独立失败边界。持久化文件由应用负责，不应把临时 URL 当永久地址。自定义 downloader 负责网络限制、最大体积及 AbortSignal 响应。
-
-## 连接、安全与执行约定
-
-| Provider | 默认 baseURL | 环境变量 |
-|---|---|---|
-| fal | `https://queue.fal.run` | `FAL_KEY` |
-| WaveSpeed | `https://api.wavespeed.ai/api/v3` | `WAVESPEED_API_KEY` |
-| Replicate | `https://api.replicate.com/v1` | `REPLICATE_API_TOKEN` |
-| Tripo | `https://openapi.tripo3d.ai/v3` | `TRIPO_API_KEY` |
-| Meshy | `https://api.meshy.ai/openapi` | `MESHY_API_KEY` |
-| Viggle | `https://apis.viggle.ai/v1` | `VIGGLE_API_KEY` |
-
-连接支持 apiKey/baseURL/headers/fetch/name，Tripo、Meshy、Viggle 额外支持 connectionId。配置会复制保存；实际认证不能被调用级 headers 覆盖。带凭证请求拒绝跟随重定向；Viggle 下载只交付原始 302 中的签名地址。自定义 fetch 也应遵守该限制。签名存储上传独立执行，不能继承 API key 或连接 header。
-
-提交和直接执行默认不重试；正数重试要求明确远端幂等保障。状态读取默认重试两次，由 AI SDK 决定错误分类、退避与 Retry-After。远端 failed/cancelled 不触发重新生成。
-
-普通轮询首次立即查询，默认间隔 2 秒、等待超时 10 分钟。超时与 abort 是合作式信号，不能强制终止忽略信号的 Promise 或挂起的 hook。本地中止不会自动取消远端任务。
-
-五个 hooks 为 onStart/onOperation/onProgress/onFinish/onError，均 await 且忽略回调错误。鉴权、关键持久化和业务事务放在它们之外。
-
-Tripo、Meshy 与 Viggle 都不伪造提交级 callback URL。Tripo 验签和宿主事务/outbox 见 [TRIPO.md](docs/TRIPO.md)。Meshy 公共文档未提供已核验的签名协议，`parseMeshyWebhook` 明确只是非认证解析；应由宿主授权关联后唤醒既有任务查询，不能信任通知中的结果。Viggle Render 提供单次 SSE；通用 watch 和持久化调度器尚未实现。
-
-## 开发与发布验证
-
-```sh
-npm run check
-npm run check:upstream
+npm run example:local
 npm run verify:release
 ```
 
-`check` 包括类型、构建和 mock 契约测试；CI 使用 Node 22/24。`check:upstream` 离线检查 3 个精确上游包和 19 项源码 hash，不联网更新基线。
-
-`verify:release` 还会打包九个 workspace、在工作区之外安装真实 tarball 并检查公开类型和运行调用，最后运行 npm publish dry-run。正式发布沿用 GitHub Actions OIDC 配置；显式发布版本、访问级别和 dist-tag，详见 [PUBLISHING.md](docs/PUBLISHING.md)。
-
-测试不调用真实计费 API，不证明供应商账号权限、所有版本参数组合或二进制模型内容正确。Viggle 另有真实 workerd 本地运行验证：不启用 nodejs_compat，覆盖任务恢复、精确 seed、multipart、SSE 与签名上传；复现方式见 [Worker 验证](tests/workerd/README.md)。
-
-示例：[自定义 provider](examples/custom-provider.ts)、[聚合平台](examples/media-providers.ts)、[资产恢复](examples/submit-and-resume.ts)、[Tripo](examples/tripo.ts)、[Meshy](examples/meshy.ts)、[Viggle](examples/viggle.ts)。
-
-## 上游与许可证
-
-基线 `ai@7.0.155`、`@ai-sdk/provider@4.0.34`、`@ai-sdk/provider-utils@5.0.70`。内部导入集中在 `packages/core/src/internal/sdk.ts`，core 的 ai peer 精确锁定；升级需要审阅，不另行维护 SDK 的基础 retry/abort 实现。
-
-Apache-2.0，保留 Vercel 和 SineStack AI 归属。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE)、[上游](docs/UPSTREAM.md)、[架构](docs/ARCHITECTURE.md)、[Media providers](docs/MEDIA_PROVIDERS.md) 和 [历史迁移说明](docs/MIGRATION.md)。
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for attribution.

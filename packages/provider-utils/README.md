@@ -1,19 +1,90 @@
 # @sinestack/ai-provider-utils
 
-SineStack AI 资产 provider adapter 共用的轻量 JSON 校验、默认文件映射与单次 HTTP 传输工具。
+English | [简体中文](https://github.com/fei-bai-inc/sinestack-ai/blob/main/packages/provider-utils/README.zh-CN.md)
 
-## 职责边界
+Helpers for provider adapters: validate JSON, map native output to file references, and send authenticated HTTP requests. Use them when implementing a custom adapter or adapting a provider's response schema.
 
-- `jsonValue` / `jsonObject` / `httpURL`：无副作用的数据快照与安全 URL 校验
-- `mapAssetResult` / `snapshotAssetMapping`：通用文件输出解析与外部 mapper 绑定快照
-- `AssetProviderTransport`：复用 `@ai-sdk/provider-utils` 的单次 HTTP 请求与错误处理，不包含重试、轮询或生命周期状态机
+## Install
 
-## 特殊响应
+```sh
+npm install @sinestack/ai-provider-utils
+```
 
-`request(url, method, options, body?, allowEmpty?, handlers?)` 的第六个参数可按请求提供 `successfulResponseHandler` 和 `failedResponseHandler`。两者使用 AI SDK 的 `ResponseHandler`；错误 handler 返回 `APICallError`，由上层共享执行机制决定是否重试。默认仍严格解析 JSON，只有显式 `allowEmpty` 才接受约定的空成功响应。
+Use Node.js 22 or 24 with ESM (`.mjs`, or `"type": "module"`). The package requires Node >=22. If your application also executes tasks through core, install `@sinestack/ai-core ai@7.0.155`.
 
-`requestRaw(url, method, options, { accept?, redirect?, failedResponseHandler? })` 返回未读取的 `Response`，适用于流或下载地址查询。调用方负责读取和取消响应体。默认禁止重定向；显式 `redirect: 'manual'` 只交付原始 301/302/303/307/308 响应，不跟随 `Location`，不向目标地址发送认证信息。调用方必须验证下载地址，并通过独立的非认证下载流程读取产物。
+## Parse a file response
 
-两条路径共用 baseURL origin/path 校验、锁定的认证和调用方 AbortSignal；provider 专用解码与流事件解析仍留在各自 adapter。
+Save as `example.mjs` and run `node example.mjs`. This example parses local data; the example URL is a file reference and is never fetched.
 
-详细说明见仓库 [README](https://github.com/fei-bai-inc/sinestack-ai)。
+```js
+import { jsonObject, mapAssetResult } from '@sinestack/ai-provider-utils';
+
+const output = jsonObject({
+  files: [{
+    url: 'https://example.com/model.glb',
+    content_type: 'model/gltf-binary',
+    file_name: 'model.glb',
+  }],
+}, 'provider output');
+
+const result = mapAssetResult(output);
+for (const asset of result.assets) {
+  console.log(asset.type, asset.mediaType, asset.filename);
+}
+```
+
+`mapAssetResult` recognizes root URLs, file lists, and nested file objects. It deduplicates URLs and infers media types from extensions when needed. For a provider-specific schema, supply your own `mapResult` through `AssetModelMapping`.
+
+## Public helpers
+
+| Export | Use |
+|---|---|
+| `jsonValue`, `jsonObject` | Copy finite, acyclic, plain JSON data; `jsonObject` requires an object root. |
+| `record` | Validate a plain object before reading protocol fields. |
+| `errorMessage` | Extract a message from common error response shapes. |
+| `httpURL` | Parse an absolute HTTP(S) URL; reject embedded credentials and fragments. |
+| `mapAssetResult` | Convert native file references into an `AssetModelV1Result` with a nonempty `assets` array. |
+| `snapshotAssetMapping` | Capture and bind optional input/result mapping functions, including prototype methods. |
+| `AssetProviderTransport` | Send one authenticated GET, JSON/multipart POST, PUT, or DELETE request; decode its response or return a raw stream. |
+| `invalidResponse` | Convert a malformed protocol response into a non-retryable API error. |
+| `AssetProviderTransportOptions`, `AssetProviderResponse` | Type transport configuration and returned response data. |
+| `AssetProviderResponseHandlers`, `AssetProviderRawRequestOptions` | Customize per-request decoding or raw response handling. |
+
+## Request provider JSON
+
+This helper reads a status URL using your provider's API base URL and credentials. Pass the absolute status URL documented by the provider, within the configured base URL's origin and path prefix.
+
+```js
+import { AssetProviderTransport, jsonObject } from '@sinestack/ai-provider-utils';
+
+export async function readStatus({ baseURL, statusURL, apiKey, signal }) {
+  const transport = new AssetProviderTransport({
+    provider: 'custom',
+    baseURL,
+    apiKey,
+    environmentVariableName: 'CUSTOM_API_KEY',
+  });
+  const response = await transport.request(statusURL, 'GET', {
+    headers: {},
+    abortSignal: signal,
+  });
+  return jsonObject(response.value, 'task status');
+}
+```
+
+Pass an `AbortSignal`, such as `new AbortController().signal`. The transport reads the supplied server-side `apiKey` or `CUSTOM_API_KEY` environment variable and uses Bearer authentication by default; set `authorizationScheme: 'Key'` for APIs that require it. Remote calls use the provider account and may incur charges.
+
+For writes, pass a JSON object as the fourth `request` argument, or `FormData` for multipart POST. DELETE accepts an empty 200/204 response when the fifth argument is `true`; use it for deletion endpoints that document an empty response. Deletion and remote cancellation are separate operations.
+
+The sixth `request` argument accepts `successfulResponseHandler` and `failedResponseHandler` using the AI SDK `ResponseHandler` contract. Use these for provider-specific decoding, such as lossless JSON, while retaining shared authentication and destination checks.
+
+`requestRaw(url, method, options, { accept, redirect, failedResponseHandler })` returns an unconsumed `Response`; the caller must read or cancel its body. It accepts no request body. `redirect` defaults to logical rejection; explicit `'manual'` exposes a 301/302/303/307/308 response for inspection without following its `Location`.
+
+All network calls use physical `redirect: 'manual'`, which workerd supports; the default policy still rejects redirects. Custom fetch must not follow them. Keep signed storage uploads separate from authenticated API requests. Apply your provider's schema and your application's download authorization policy as well.
+
+## Guides
+
+- [Media providers](https://github.com/fei-bai-inc/sinestack-ai/blob/main/docs/MEDIA_PROVIDERS.md): input and result mapping
+- [Architecture](https://github.com/fei-bai-inc/sinestack-ai/blob/main/docs/ARCHITECTURE.md): adapter and lifecycle contracts
+- [Security](https://github.com/fei-bai-inc/sinestack-ai/blob/main/SECURITY.md): credentials, custom fetch, and URL handling
+- [Transport source](https://github.com/fei-bai-inc/sinestack-ai/blob/main/packages/provider-utils/src/transport.ts): request options and response handling

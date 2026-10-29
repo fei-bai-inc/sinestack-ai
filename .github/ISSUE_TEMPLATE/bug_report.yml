@@ -1,0 +1,36 @@
+name: Bug report
+description: Report a reproducible SDK, type, or repository-workflow problem
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English | [简体中文](https://github.com/fei-bai-inc/sinestack-ai/issues/new?template=bug_report.zh-CN.yml)
+
+        Report security issues privately as described in [SECURITY.md](https://github.com/fei-bai-inc/sinestack-ai/blob/main/SECURITY.md). Do not include API keys, signed URLs, private inputs, or unsanitized logs.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Relevant @sinestack package versions, Node.js/npm versions, operating system, and provider/model version if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Minimal copyable code and commands; state whether a real API is required. Use placeholder credentials and remove private data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual results
+      description: Describe the expected behavior, actual behavior, and sanitized errors. For recovery issues, identify the failing stage.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Duplicate submissions or charges, whether the original task can be resumed, related links, or temporary workarounds.

@@ -1,5 +1,7 @@
 # Manual Viggle workerd smoke
 
+English | [简体中文](README.zh-CN.md)
+
 This fixture runs four provider integration checks in the real Cloudflare `workerd` runtime.
 It imports the compiled public package entry points with repository-relative paths and uses
 an injected mock fetch for every API and storage response. It does not contact Viggle, spend
@@ -23,7 +25,7 @@ browser platform, ESM output, ES2022 target and `workerd`/`worker`/`browser` con
 build rejects external imports, so an unresolved Node module cannot silently escape into
 the Worker runtime.
 
-Verified on 2026-10-29 with:
+Recorded verification on 2026-10-29 used:
 
 | Setting | Value |
 |---|---|
@@ -53,3 +55,7 @@ Expected result: four `[ PASS ]` entries and exit status 0. This is local runtim
 verification with mocked HTTP, not live Viggle acceptance, Cloudflare deployment acceptance,
 or a guarantee for every compatibility date and bundler configuration. Long-running task
 scheduling and persistent receipt storage remain the application's responsibility.
+
+For an application Worker, pass its account binding explicitly with
+`createViggleProvider({ apiKey: env.VIGGLE_API_KEY })`. The fixture uses an explicit mock key;
+it does not establish production credentials or test a live account.

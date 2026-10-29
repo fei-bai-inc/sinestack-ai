@@ -3,17 +3,43 @@ import { MeshyClient } from './client.js';
 import { MeshyAssetModel, MeshyTaskDriver } from './driver.js';
 import { meshyAnimationResult, meshyAutoSplitResult, meshyModelResult, meshyPrintAnalysisResult, meshyPrintRepairResult, meshyRigResult } from './results.js';
 import { meshyResources } from './resources.js';
+import type { MeshyResources } from './resources.js';
 import { nonempty } from './validation.js';
 import type * as T from './types.js';
 export * from './types.js';
 export { MeshyClient } from './client.js';
+export type { MeshyResponse, MeshyTaskResponse, MeshyDeleteResult } from './client.js';
+export type { MeshyResources, MeshyTaskDeletion } from './resources.js';
 export { MeshyAssetModel, MeshyTaskDriver } from './driver.js';
-export type { MeshyTaskDefinition } from './driver.js';
+export type { MeshyTaskDefinition, MeshyTaskStartResult, MeshyAssetStartResult } from './driver.js';
 export type { MeshyTaskFamily } from './routes.js';
 export { parseMeshyWebhook } from './webhooks.js';
 export { validateMeshyInput } from './validation.js';
 
-export function createMeshyProvider(settings: T.MeshyProviderSettings = {}) {
+export interface MeshyProvider extends MeshyResources {
+  textTo3D<I = T.MeshyTextTo3DInput>(modelId: T.MeshyModelId, mapping?: AssetModelMapping<I>): MeshyAssetModel<I, 'model-3d'>;
+  imageTo3D<I = T.MeshyImageTo3DInput>(modelId: T.MeshyModelId, mapping?: AssetModelMapping<I>): MeshyAssetModel<I, 'model-3d'>;
+  multiImageTo3D<I = T.MeshyMultiImageTo3DInput>(modelId: T.MeshyModelId, mapping?: AssetModelMapping<I>): MeshyAssetModel<I, 'model-3d'>;
+  textToImage<I = T.MeshyTextToImageInput>(modelId: string, mapping?: AssetModelMapping<I>): MeshyAssetModel<I, 'image'>;
+  imageToImage<I = T.MeshyImageToImageInput>(modelId: string, mapping?: AssetModelMapping<I>): MeshyAssetModel<I, 'image'>;
+  textToMotion<I = T.MeshyTextToMotionInput>(mode: T.MeshyMotionMode, mapping?: AssetModelMapping<I>): MeshyAssetModel<I, 'animation-3d'>;
+  /** Omit modelId to inherit the preview's algorithm version. */
+  refine<I = T.MeshyRefineInput>(modelId?: T.MeshyModelId, mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyModelResult, 'model3d.process'>;
+  retexture<I = T.MeshyRetextureInput>(modelId?: T.MeshyModelId, mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyModelResult, 'model3d.process'>;
+  remesh<I = T.MeshyRemeshInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyModelResult, 'model3d.process'>;
+  convert<I = T.MeshyConvertInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyModelResult, 'model3d.process'>;
+  resize<I = T.MeshyResizeInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyModelResult, 'model3d.process'>;
+  unwrapUV<I = T.MeshyUVInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyModelResult, 'model3d.process'>;
+  multiColorPrint<I = T.MeshyMultiColorPrintInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyModelResult, 'model3d.process'>;
+  repairPrintability<I = T.MeshyPrintRepairInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyPrintRepairResult, 'model3d.process'>;
+  autoSplit<I = T.MeshyAutoSplitInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyAutoSplitResult, 'model3d.process'>;
+  analyzePrintability<I = T.MeshyPrintAnalysisInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyPrintAnalysisResult, 'model3d.analyze'>;
+  rig<I = T.MeshyRigInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyRigResult, 'model3d.rig'>;
+  animate<I = T.MeshyAnimationInput>(mapping?: T.MeshyInputMapping<I>): MeshyTaskDriver<I, T.MeshyAnimationResult, 'model3d.animate'>;
+  asset<I = JSONObject, K extends string = string>(route: string, definition: T.MeshyAssetDefinition<I, K>): MeshyAssetModel<I, K>;
+}
+
+export function createMeshyProvider(settings: T.MeshyProviderSettings = {}): MeshyProvider {
   const client = new MeshyClient({ ...settings, headers: { ...settings.headers } });
   const selected = (id: string) => { nonempty(id, 'Explicit modelId'); return id; };
   const asset = <I, K extends string>(route: string, kind: K, id?: string, mapping?: AssetModelMapping<I>, variant?: 'preview' | 'refine', modelField?: 'ai_model' | 'mode') => new MeshyAssetModel(client, route, kind, id, mapping, variant, modelField);
@@ -45,4 +71,3 @@ export function createMeshyProvider(settings: T.MeshyProviderSettings = {}) {
     asset<I = JSONObject, K extends string = string>(route: string, definition: T.MeshyAssetDefinition<I, K>) { return asset<I, K>(route, definition.kind, definition.modelId, definition); },
   };
 }
-export type MeshyProvider = ReturnType<typeof createMeshyProvider>;

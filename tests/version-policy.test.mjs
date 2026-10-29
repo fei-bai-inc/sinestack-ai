@@ -35,8 +35,6 @@ async function fixture(t) {
   await json(join(repo, 'package-lock.json'), lock);
   await mkdir(join(repo, 'packages/core/src/internal'), { recursive: true });
   await writeFile(join(repo, 'packages/core/src/internal/runtime.ts'), "withUserAgentSuffix(options.headers, 'sinestack-ai/1.2.3');\n");
-  await mkdir(join(repo, 'tests'), { recursive: true });
-  await writeFile(join(repo, 'tests/integration.test.mjs'), "assert.match(headers.get('user-agent'), /sinestack-ai\\/1\\.2\\.3/);\n");
   await writeFile(join(repo, 'tsconfig.base.json'), '{}\n');
   await writeFile(join(repo, '.gitignore'), 'dist/\n');
   git(repo, 'add', '.'); git(repo, 'commit', '-qm', 'base');
@@ -90,7 +88,6 @@ test('dependency bumps do not cascade; explicitly updated pins require dependent
   result = cli(repo); succeeds(result);
   assert.match(result.stdout, /ai-core@2\.0\.0/);
   assert.equal((await readJson(repo, 'package.json')).version, '9.0.0');
-  assert.match(await readFile(join(repo, 'tests/integration.test.mjs'), 'utf8'), /2\\\.0\\\.0/);
 });
 
 test('policy rejects decreased versions, invalid pins and lock mismatches', async t => {
@@ -131,11 +128,11 @@ test('shared compiler configuration and compiler lock changes require every pack
   fails(cli(repo), /ai-provider changed/);
 });
 
-test('deleted package metadata and user-agent inconsistencies fail closed', async t => {
+test('deleted package metadata and runtime version mismatches fail closed', async t => {
   const repo = await fixture(t);
-  await writeFile(join(repo, 'tests/integration.test.mjs'), "assert.match(headers.get('user-agent'), /sinestack-ai\\/0\\.0\\.0/);\n");
-  fails(cli(repo), /integration.test.mjs/);
-  await writeFile(join(repo, 'tests/integration.test.mjs'), "assert.match(headers.get('user-agent'), /sinestack-ai\\/1\\.2\\.3/);\n");
+  await writeFile(join(repo, 'packages/core/src/internal/runtime.ts'), "withUserAgentSuffix(options.headers, 'sinestack-ai/0.0.0');\n");
+  fails(cli(repo), /user-agent version must match core/);
+  await writeFile(join(repo, 'packages/core/src/internal/runtime.ts'), "withUserAgentSuffix(options.headers, 'sinestack-ai/1.2.3');\n");
   await rm(join(repo, 'packages/fal/package.json'));
   fails(cli(repo));
 });

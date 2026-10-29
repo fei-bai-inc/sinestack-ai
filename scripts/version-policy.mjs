@@ -56,11 +56,6 @@ export async function checkReleaseVersion(baseRef, repo = process.cwd()) {
   const agents = [...runtime.matchAll(/withUserAgentSuffix\s*\([^\n]*?['"]sinestack-ai\/([^'"\s]+)['"]/gu)];
   assert.equal(agents.length, 1, 'Expected exactly one sinestack-ai user-agent in runtime.ts.');
   assert.equal(agents[0][1], coreVersion, 'runtime.ts user-agent version must match core version.');
-  const integration = await readFile(join(repo, 'tests/integration.test.mjs'), 'utf8');
-  const assertions = [...integration.matchAll(/assert\.match\s*\(\s*headers\.get\(['"]user-agent['"]\)\s*,\s*\/sinestack-ai\\\/([^/]+)\//gu)];
-  assert.equal(assertions.length, 1, 'Expected exactly one sinestack-ai user-agent assertion in integration.test.mjs.');
-  const escaped = coreVersion.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-  assert.equal(assertions[0][1], escaped, 'integration.test.mjs user-agent assertion must match core version with escaped dots.');
 
   // Diff the final working tree against the base, including staged changes and untracked, nonignored files.
   const paths = new Set((git('diff', '--name-only', '-z', '--no-renames', baseRef, '--') + git('ls-files', '--others', '--exclude-standard', '-z')).split('\0').filter(Boolean));

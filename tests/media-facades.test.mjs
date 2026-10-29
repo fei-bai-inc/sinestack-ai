@@ -1,60 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { generateAnimation3D, generateMusic, generate3D, generateSoundEffect } from '@sinestack/ai-core';
+import { generateAnimation3D, generateMusic, materializeAsset } from '@sinestack/ai-core';
 
-for (const [kind, generate] of [
-  ['music', generateMusic], ['animation-3d', generateAnimation3D],
-  ['model-3d', generate3D], ['sound-effect', generateSoundEffect],
-]) {
-  test(`${kind} facade preserves arbitrary native input without a modality schema`, async () => {
-    const input = { description: 'Native model request', model_specific: { steps: 9999, enabled: false }, custom_array: ['one', 2] };
-    let calls = 0;
-    const model = {
-      specificationVersion: 'v1', provider: 'external', modelId: 'unregistered/new-model', kind,
-      async doGenerate(options) {
-        calls++;
-        assert.equal(options.input, input);
-        return { assets: [{ type: 'url', url: 'https://assets.example/output', mediaType: 'application/octet-stream' }] };
-      },
-    };
-    const result = await generate({ model, input });
-    assert.equal(calls, 1);
-    assert.equal(result.asset.url, 'https://assets.example/output');
-  });
-}
-
-test('music facade delegates one typed input to the shared executor and preserves native metadata', async () => {
-  const phases = [];
-  const model = {
-    specificationVersion: 'v1', provider: 'fixture', modelId: 'music', kind: 'music',
-    async doGenerate({ input, providerOptions, abortSignal }) {
-      phases.push('generate');
-      assert.deepEqual(input, { prompt: 'A spacious piano score', lyrics: undefined, instrumental: true });
-      assert.deepEqual(providerOptions, { fixture: { format: 'wav' } });
-      assert.ok(abortSignal instanceof AbortSignal);
-      return {
-        assets: [{ type: 'url', url: 'https://media.example/song.wav', mediaType: 'audio/wav' }],
-        providerMetadata: { fixture: { output: { audio: 'https://media.example/song.wav', seed: 7 } } },
-      };
-    },
-  };
-  const result = await generateMusic({
-    model, prompt: 'A spacious piano score', instrumental: true,
-    providerOptions: { fixture: { format: 'wav' } },
-    hooks: { onStart() { phases.push('start'); }, onFinish() { phases.push('finish'); } },
-  });
-  assert.deepEqual(phases, ['start', 'generate', 'finish']);
-  assert.equal(result.asset.mediaType, 'audio/wav');
-  assert.equal(result.providerMetadata.fixture.output.seed, 7);
-});
-
-test('animation facade uses the same async operation and lifecycle path', async () => {
+test('animation publishes the accepted operation before querying and finishes only after completion', async () => {
   const phases = [];
   const model = {
     specificationVersion: 'v1', provider: 'fixture', modelId: 'motion', kind: 'animation-3d',
-    async doStart({ input }) {
+    async doStart() {
       phases.push('submit');
-      assert.deepEqual(input, { prompt: 'Walk forward', durationSeconds: 3, seed: 42, format: 'json' });
       return { operation: { id: 'motion-1' } };
     },
     async doStatus({ operation }) {
@@ -66,12 +19,11 @@ test('animation facade uses the same async operation and lifecycle path', async 
     },
   };
   const result = await generateAnimation3D({
-    model, prompt: 'Walk forward', durationSeconds: 3, seed: 42, format: 'json',
+    model, input: { prompt: 'Walk forward', durationSeconds: 3, seed: 42, format: 'json' },
     hooks: { onOperation() { phases.push('operation'); }, onFinish() { phases.push('finish'); } },
   });
   assert.deepEqual(phases, ['submit', 'operation', 'query', 'finish']);
   assert.equal(result.operation.kind, 'animation-3d');
-  assert.equal(result.asset.mediaType, 'application/json');
 });
 
 test('domain facades reject a wrong kind before invoking a provider', async () => {
@@ -80,4 +32,50 @@ test('domain facades reject a wrong kind before invoking a provider', async () =
   await assert.rejects(generateMusic({ model: wrongModel, prompt: 'Piano' }), /requires a music/);
   await assert.rejects(generateAnimation3D({ model: wrongModel, prompt: 'Walk' }), /requires an animation-3d/);
   assert.equal(calls, 0);
+});
+
+test('music generation leaves multiple outputs remote and materializes only the selected asset', async t => {
+  const network = t.mock.method(globalThis, 'fetch', () => assert.fail('No implicit downloads are allowed'));
+  let generations = 0;
+  const files = [
+    { type: 'url', url: 'https://media.example/song.wav', mediaType: 'audio/wav' },
+    { type: 'url', url: 'https://media.example/stem.flac', mediaType: 'audio/flac' },
+  ];
+  const model = {
+    specificationVersion: 'v1', provider: 'fixture', modelId: 'music', kind: 'music',
+    async doGenerate() { generations++; return { assets: files }; },
+  };
+  const result = await generateMusic({ model, input: { description: 'Piano with separate stem' } });
+  assert.deepEqual(result.assets, files);
+  const downloads = [];
+  const file = await materializeAsset(result.assets[1], {
+    maxBytes: 3,
+    async download({ url }) {
+      downloads.push(url.href);
+      return { data: new Uint8Array([1, 2, 3]) };
+    },
+  });
+  assert.deepEqual(downloads, ['https://media.example/stem.flac']);
+  assert.equal(file.mediaType, 'audio/flac');
+  assert.deepEqual(file.uint8Array, new Uint8Array([1, 2, 3]));
+  assert.equal(result.assets[1].type, 'url');
+  assert.equal(generations, 1);
+  assert.equal(network.mock.callCount(), 0);
+});
+
+test('materialization preserves abort reasons before dispatch and after an uncooperative download resolves', async () => {
+  const asset = { type: 'url', url: 'https://media.example/song.wav', mediaType: 'audio/wav' };
+  const controller = new AbortController();
+  const reason = new Error('Stop fetching media');
+  let downloads = 0;
+  const download = async () => {
+    downloads++;
+    controller.abort(reason);
+    return { data: new Uint8Array([1, 2, 3]) };
+  };
+  await assert.rejects(materializeAsset(asset, { abortSignal: controller.signal, download }), error => error === reason);
+  assert.equal(downloads, 1);
+  await assert.rejects(materializeAsset(asset, { abortSignal: controller.signal, download }), error => error === reason);
+  assert.equal(downloads, 1, 'an already aborted materialization must not download again');
+  assert.equal(asset.type, 'url');
 });

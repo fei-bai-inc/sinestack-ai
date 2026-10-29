@@ -1,5 +1,7 @@
 # Viggle provider
 
+English | [简体中文](VIGGLE.zh-CN.md)
+
 `@sinestack/ai-viggle` connects the public Viggle V1 API to the existing SineStack AI asset and
 task runtime. It covers video generation, character animation, renders, image generation,
 video upscaling, reusable characters and motions, 3D exports, scene operations and account
@@ -9,7 +11,7 @@ balance. The protocol references were reviewed on **2026-10-29**.
 tests verify request serialization, response interpretation and restoration without another
 submission; they do not establish visual quality, current account entitlements or live uptime.
 
-The same public provider and core also passed four local smoke tests in the actual **workerd
+The repository records four local smoke tests of the same public provider and core in the actual **workerd
 1.20261029.1** runtime, bundled with **esbuild 0.28.2**, compatibility date **2026-10-29**, and no
 compatibility flags or Node polyfills. They exercise persisted restoration and exact seeds,
 native multipart encoding, SSE and signed PUT. Every request passes through a native Worker
@@ -36,6 +38,10 @@ The default base URL **already includes `/v1`**. A proxy can supply another orig
 The provider uses Bearer authentication for the API; per-call headers cannot replace the
 configured credential. Calls support ordinary request headers and AbortSignal. Neither task
 handles nor asset operations contain the API key.
+
+In Cloudflare Workers, pass the account binding explicitly as
+`createViggleProvider({ apiKey: env.VIGGLE_API_KEY })`; the Node environment fallback does not
+replace Worker bindings. Use the host's durable scheduler and persist each operation receipt.
 
 Viggle does not expose a free model selector on every endpoint. H3, Animate, Image and the
 fixed 2x upscaler use the backend selected by their native request. Factories do not invent
@@ -327,6 +333,7 @@ Viggle's queued/processing/ready states map to pending/running/completed in the 
 Failed and cancelled tasks are terminal; HTTP 200 alone does not mean successful generation.
 Native error data includes code, retryable, request_id, details and remediation. HTTP errors
 preserve the native retryability hint; the core's existing retry logic performs any retry.
+Terminal task and asset errors retain the response and provider metadata for diagnosis.
 Unknown progress-stage labels do not invalidate a recognized lifecycle state.
 
 `renders.events(id, { lastEventId })` opens one authenticated SSE connection and returns an

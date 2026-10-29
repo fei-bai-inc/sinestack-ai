@@ -14,14 +14,11 @@ const lockPath = join(repository, 'package-lock.json');
 const lock = await readJson('package-lock.json');
 assert(lock.packages?.[targetPath], `package-lock.json is missing workspace ${targetPath}.`);
 
-let runtimePath, integrationPath, runtime, integration;
+let runtimePath, runtime;
 if (directory === 'core') {
   runtimePath = join(repository, 'packages/core/src/internal/runtime.ts');
-  integrationPath = join(repository, 'tests/integration.test.mjs');
   runtime = await readFile(runtimePath, 'utf8');
-  integration = await readFile(integrationPath, 'utf8');
   assert(/sinestack-ai\/[0-9A-Za-z.-]+/u.test(runtime), 'Failed to find runtime user-agent version.');
-  assert(/\/sinestack-ai\\\/[0-9A-Za-z.\\-]+\//u.test(integration), 'Failed to find integration user-agent version.');
 }
 
 target.version = version;
@@ -30,7 +27,5 @@ await writeFile(join(repository, targetPath, 'package.json'), JSON.stringify(tar
 await writeFile(lockPath, JSON.stringify(lock, null, 2) + '\n');
 if (directory === 'core') {
   await writeFile(runtimePath, runtime.replace(/sinestack-ai\/[0-9A-Za-z.-]+/u, `sinestack-ai/${version}`));
-  const escaped = version.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-  await writeFile(integrationPath, integration.replace(/\/sinestack-ai\\\/[0-9A-Za-z.\\-]+\//u, `/sinestack-ai\\/${escaped}/`));
 }
 console.log(`Updated ${target.name} to ${version}. After all version and dependency changes, run npm install --package-lock-only --ignore-scripts --no-audit --no-fund and commit the lockfile.`);

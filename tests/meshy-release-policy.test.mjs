@@ -30,8 +30,6 @@ async function fixture(t, { oldDirectory = false, oldMalformedManifest = false }
   await json(join(repo, 'package-lock.json'), lock);
   await mkdir(join(repo, 'packages/core/src/internal'), { recursive: true });
   await writeFile(join(repo, 'packages/core/src/internal/runtime.ts'), "withUserAgentSuffix(options.headers, 'sinestack-ai/0.1.1');\n");
-  await mkdir(join(repo, 'tests'));
-  await writeFile(join(repo, 'tests/integration.test.mjs'), "assert.match(headers.get('user-agent'), /sinestack-ai\\/0\\.1\\.1/);\n");
   if (oldDirectory || oldMalformedManifest) {
     await mkdir(join(repo, 'packages/meshy'), { recursive: true });
     await writeFile(join(repo, 'packages/meshy/README.md'), 'An existing package directory.\n');

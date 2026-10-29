@@ -103,7 +103,7 @@ export function inspectArchive(path, expected) {
       }
     }
   }
-  for (const required of ['README.md', 'LICENSE', 'NOTICE', 'src/index.ts']) {
+  for (const required of ['README.md', 'README.zh-CN.md', 'LICENSE', 'NOTICE', 'src/index.ts']) {
     assert(files.has(`package/${required}`), `Missing required file in ${expected.name}: ${required}`);
   }
 }
