@@ -5,13 +5,21 @@ import {
   generateMusic,
   generateSoundEffect,
   materializeAsset,
+  checkRigging,
+  processModel3D,
+  rigModel,
+  animateModel,
+  startTask,
+  waitForTask,
 } from '@sinestack/ai-core';
-import type { GenerateAssetResult } from '@sinestack/ai-core';
+import type { DomainResult, GenerateAssetResult } from '@sinestack/ai-core';
 import { createFalAssetProvider } from '@sinestack/ai-fal';
-import type { AssetModelMapping, AssetModelV1, JSONObject } from '@sinestack/ai-provider';
+import type { AssetModelMapping, AssetModelV1, JSONObject, TaskHandle } from '@sinestack/ai-provider';
 import { AssetProviderTransport, mapAssetResult } from '@sinestack/ai-provider-utils';
 import { createReplicateAssetProvider } from '@sinestack/ai-replicate';
 import { createWaveSpeedAssetProvider } from '@sinestack/ai-wavespeed';
+import { createTripoProvider } from '@sinestack/ai-tripo';
+import type { TripoRigCheckResult } from '@sinestack/ai-tripo';
 
 const fal = createFalAssetProvider({ apiKey: 'test' });
 const wavespeed = createWaveSpeedAssetProvider({ apiKey: 'test' });
@@ -55,4 +63,24 @@ export async function typecheckConsumer(): Promise<GenerateAssetResult<'animatio
     input: { title: 'Doc' },
   });
   return result;
+}
+
+/** Typecheck only. No network requests run when this module is imported. */
+export async function typecheckTripoConsumer(): Promise<DomainResult<TripoRigCheckResult, 'model3d.rig.check'>> {
+  const tripo = createTripoProvider({ apiKey: 'test' });
+  void generate3D({ model: tripo.textTo3D('explicit-version'), input: { prompt: 'Chair' } });
+  void processModel3D({ processor: tripo.texture(), input: { input: 'source-task' } });
+  void rigModel({ rigger: tripo.rig('explicit-rig-version'), input: { input: 'source-task' } });
+  void animateModel({ animator: tripo.retarget(), input: { input: 'rig-task', animation: 'preset:walk' } });
+  const model = tripo.rigCheck();
+  const started = await startTask({ model, input: { input: 'source-task' } });
+  const saved: TaskHandle<'model3d.rig.check'> = started.task;
+  const completed = await waitForTask({ model, task: saved });
+  const riggable: boolean = completed.result.riggable;
+  void riggable;
+  // @ts-expect-error Renamed declarations must still reject missing native inputs.
+  void checkRigging({ checker: model, input: {} });
+  // @ts-expect-error Sharing a runtime must not erase semantic domain boundaries.
+  void rigModel({ rigger: model, input: { input: 'source-task' } });
+  return checkRigging({ checker: model, input: { input: 'source-task' } });
 }

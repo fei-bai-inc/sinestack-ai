@@ -21,6 +21,7 @@ const expectedPackageNames = [
   '@sinestack/ai-fal',
   '@sinestack/ai-wavespeed',
   '@sinestack/ai-replicate',
+  '@sinestack/ai-tripo',
 ];
 
 function createSampleRelease(version = '0.1.0') {
@@ -94,7 +95,7 @@ function fakePublishDeps(options = {}) {
 }
 
 describe('release metadata and archive contract', () => {
-  test('declares all six @sinestack/ai-* packages in topological dependency order', async () => {
+  test('declares all seven @sinestack/ai-* packages in topological dependency order', async () => {
     assert.deepEqual(packageDirectories, [
       'provider',
       'provider-utils',
@@ -102,6 +103,7 @@ describe('release metadata and archive contract', () => {
       'fal',
       'wavespeed',
       'replicate',
+      'tripo',
     ]);
     const packages = await readPackages();
     assert.deepEqual(
@@ -119,7 +121,7 @@ describe('release metadata and archive contract', () => {
 });
 
 describe('release publish script', () => {
-  test('publishes all six packages in dry-run mode without querying npm view', async () => {
+  test('publishes all release packages in dry-run mode without querying npm view', async () => {
     const deps = fakePublishDeps({
       viewResult: () => {
         throw new Error('dry-run must not query npm view');
@@ -134,7 +136,7 @@ describe('release publish script', () => {
     const publishCalls = deps.calls.filter(
       call => call[0] === 'npm' && call[1] === 'publish',
     );
-    assert.equal(publishCalls.length, 6);
+    assert.equal(publishCalls.length, expectedPackageNames.length);
     for (const call of publishCalls) {
       assert.equal(call.includes('--dry-run'), true);
     }
@@ -163,7 +165,7 @@ describe('release publish script', () => {
       deps,
     );
 
-    assert.equal(published.length, 4);
+    assert.equal(published.length, expectedPackageNames.length - 2);
     assert.equal(
       deps.logs.some(line =>
         line.includes('Already published with matching integrity: @sinestack/ai-provider@0.1.0'),
@@ -271,13 +273,18 @@ describe('release publish script', () => {
         ' M packages/fal/package.json',
         ' M packages/wavespeed/package.json',
         ' M packages/replicate/package.json',
-        ' M packages/core/src/internal/executor.ts',
+        ' M packages/tripo/package.json',
+        ' M packages/core/src/internal/runtime.ts',
         ' M tests/integration.test.mjs',
       ].join('\n'),
       true,
     );
     assert.throws(
       () => assertDirtyStatusAllowed(' M packages/core/src/index.ts\n', true),
+      /non-version changes/,
+    );
+    assert.throws(
+      () => assertDirtyStatusAllowed(' M packages/core/src/internal/executor.ts\n', true),
       /non-version changes/,
     );
   });

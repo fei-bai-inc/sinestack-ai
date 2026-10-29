@@ -16,7 +16,7 @@ export const ALLOWED_VERSION_DIRTY_PATHS = new Set([
   'package.json',
   'package-lock.json',
   ...packageDirectories.map(name => `packages/${name}/package.json`),
-  'packages/core/src/internal/executor.ts',
+  'packages/core/src/internal/runtime.ts',
   'tests/integration.test.mjs',
 ]);
 
@@ -213,7 +213,7 @@ export async function publishReleasePackages(options, deps = {}) {
     assert.equal(result.status, 0, `npm publish failed for ${pkg.name}@${pkg.version}`);
   }
   log(
-    `${options.dryRun ? 'Dry run checked' : 'Published or verified'} all six packages at ${version} (${options.access}, tag ${options.tag}).`,
+    `${options.dryRun ? 'Dry run checked' : 'Published or verified'} all ${release.packages.length} packages at ${version} (${options.access}, tag ${options.tag}).`,
   );
 }
 

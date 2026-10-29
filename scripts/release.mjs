@@ -14,6 +14,7 @@ export const packageDirectories = [
   'fal',
   'wavespeed',
   'replicate',
+  'tripo',
 ];
 export const artifacts = join(repository, 'artifacts');
 
@@ -33,7 +34,7 @@ export async function readPackages(repo = repository) {
     const path = join(repo, 'packages', directory);
     const manifest = JSON.parse(await readFile(join(path, 'package.json'), 'utf8'));
     assert.equal(manifest.name, `@sinestack/ai-${directory}`);
-    assert.equal(manifest.version, root.version, 'All six packages and the root must share one release version.');
+    assert.equal(manifest.version, root.version, 'All release packages and the root must share one release version.');
     assert.notEqual(manifest.private, true, `${manifest.name} is marked private and cannot be published.`);
     assert.equal(manifest.publishConfig?.registry, registry, `${manifest.name} must target the npm registry explicitly.`);
     assert.equal(manifest.publishConfig?.access, undefined, 'Choose access explicitly in the publish command, not in package metadata.');

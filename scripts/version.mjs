@@ -36,11 +36,11 @@ for (const directory of packageDirectories) {
 }
 await writeFile(lockPath, JSON.stringify(lock, null, 2) + '\n');
 
-const executorPath = join(repository, 'packages/core/src/internal/executor.ts');
-const executorSource = await readFile(executorPath, 'utf8');
-assert(/sinestack-ai\/[0-9A-Za-z.-]+/u.test(executorSource), 'Failed to find version in packages/core/src/internal/executor.ts');
-const updatedExecutor = executorSource.replace(/sinestack-ai\/[0-9A-Za-z.-]+/u, `sinestack-ai/${version}`);
-await writeFile(executorPath, updatedExecutor);
+const runtimePath = join(repository, 'packages/core/src/internal/runtime.ts');
+const runtimeSource = await readFile(runtimePath, 'utf8');
+assert(/sinestack-ai\/[0-9A-Za-z.-]+/u.test(runtimeSource), 'Failed to find version in packages/core/src/internal/runtime.ts');
+const updatedRuntime = runtimeSource.replace(/sinestack-ai\/[0-9A-Za-z.-]+/u, `sinestack-ai/${version}`);
+await writeFile(runtimePath, updatedRuntime);
 
 const integrationTestPath = join(repository, 'tests/integration.test.mjs');
 const integrationSource = await readFile(integrationTestPath, 'utf8');
@@ -49,4 +49,4 @@ const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 const updatedIntegration = integrationSource.replace(/\/sinestack-ai\\\/[0-9A-Za-z.\\-]+\//u, `/sinestack-ai\\/${escapedVersion}/`);
 await writeFile(integrationTestPath, updatedIntegration);
 
-console.log(`All six packages are now ${version}. Review and commit package.json, package-lock.json, and versioned files before releasing.`);
+console.log(`All ${packageDirectories.length} packages are now ${version}. Review and commit package.json, package-lock.json, and versioned files before releasing.`);
