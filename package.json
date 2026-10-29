@@ -24,7 +24,8 @@
     "check:release-version": "node scripts/check-release-version.mjs",
     "version:release": "node scripts/version.mjs",
     "release:dry-run": "node scripts/publish.mjs --dry-run",
-    "release:publish": "node scripts/publish.mjs"
+    "release:publish": "node scripts/publish.mjs",
+    "release:github": "node scripts/github-release.mjs"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
