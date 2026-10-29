@@ -197,13 +197,11 @@ export async function publishReleasePackages(options, deps = {}) {
   }
 
   const pubEnv = publishCommandEnv(process.env);
-  const bootstrapToken = process.env.NPM_BOOTSTRAP_TOKEN?.trim();
   for (const pkg of pending) {
     const args = [
       'publish',
       join(artifacts, pkg.file),
       ...registryArgs,
-      ...(bootstrapToken ? [`--//registry.npmjs.org/:_authToken=${bootstrapToken}`] : []),
       '--access',
       options.access,
       '--tag',
