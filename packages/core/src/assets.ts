@@ -1,10 +1,10 @@
 /**
  * Public asset APIs adapted from AI SDK 7.0.155's video generation APIs.
- * Copyright 2023 Vercel, Inc. Copyright 2026 Sine AI contributors.
+ * Copyright 2023 Vercel, Inc. Copyright 2026 SineStack AI contributors.
  * Modified: arbitrary asset kinds and typed inputs share one executor.
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { Animation3DInput, AssetModelV1, AssetModelV1CancelResult, AssetOperation, MusicInput, SoundEffectInput, ThreeDInput } from '@sine-ai/provider';
+import type { Animation3DInput, AssetModelV1, AssetModelV1CancelResult, AssetOperation, MusicInput, SoundEffectInput, ThreeDInput } from '@sinestack/ai-provider';
 import { AssetExecutionError } from './errors.js';
 import { attempt, completed, execute, observeWebhook, query, submissionHeaders, submit, wait } from './internal/executor.js';
 import { httpURL, milliseconds } from './internal/validation.js';

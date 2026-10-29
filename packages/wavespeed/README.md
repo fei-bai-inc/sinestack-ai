@@ -1,10 +1,10 @@
-# @sine-ai/wavespeed
+# @sinestack/ai-wavespeed
 
-WaveSpeed 的通用 Sine AI asset provider。包不维护模型清单、不选择默认模型，也不为某个模型写死参数 schema。只要模型使用 WaveSpeed prediction 协议，就可以传入它的完整模型 ID 和原生 JSON 输入。所有能力共用单次提交/查询协议，重试与等待交给 `@sine-ai/core`。
+WaveSpeed 的通用 SineStack AI asset provider。包不维护模型清单、不选择默认模型，也不为某个模型写死参数 schema。只要模型使用 WaveSpeed prediction 协议，就可以传入它的完整模型 ID 和原生 JSON 输入。所有能力共用单次提交/查询协议，重试与等待交给 `@sinestack/ai-core`。
 
 ```ts
-import { generateMusic } from '@sine-ai/core';
-import { createWaveSpeedAssetProvider } from '@sine-ai/wavespeed';
+import { generateMusic } from '@sinestack/ai-core';
+import { createWaveSpeedAssetProvider } from '@sinestack/ai-wavespeed';
 
 const wavespeed = createWaveSpeedAssetProvider({
   apiKey: process.env.WAVESPEED_API_KEY,

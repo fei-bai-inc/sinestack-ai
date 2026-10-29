@@ -2,11 +2,11 @@ import type {
   AssetModelMapping, AssetModelV1, AssetModelV1CallOptions, AssetModelV1CancelResult,
   AssetModelV1OperationOptions, AssetModelV1StartResult,
   AssetModelV1Status, JSONObject,
-} from '@sine-ai/provider';
+} from '@sinestack/ai-provider';
 import {
   AssetProviderTransport, errorMessage, httpURL, invalidResponse,
   jsonObject, jsonValue, mapAssetResult, record, snapshotAssetMapping,
-} from '@sine-ai/provider-utils';
+} from '@sinestack/ai-provider-utils';
 
 export interface ReplicateAssetProviderSettings {
   readonly apiKey?: string;

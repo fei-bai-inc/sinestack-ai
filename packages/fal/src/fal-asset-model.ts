@@ -1,7 +1,7 @@
 import {
   AssetProviderTransport, errorMessage, httpURL, invalidResponse, jsonObject, jsonValue, mapAssetResult, record, snapshotAssetMapping,
-} from '@sine-ai/provider-utils';
-import type { AssetProviderResponse } from '@sine-ai/provider-utils';
+} from '@sinestack/ai-provider-utils';
+import type { AssetProviderResponse } from '@sinestack/ai-provider-utils';
 import type {
   AssetModelV1,
   AssetModelMapping,
@@ -11,9 +11,9 @@ import type {
   AssetModelV1StartResult,
   AssetModelV1Status,
   JSONObject,
-} from '@sine-ai/provider';
+} from '@sinestack/ai-provider';
 
-export { record } from '@sine-ai/provider-utils';
+export { record } from '@sinestack/ai-provider-utils';
 
 export interface FalAssetProviderSettings {
   readonly apiKey?: string;

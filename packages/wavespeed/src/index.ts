@@ -1,5 +1,5 @@
-import type { AssetModelMapping, AssetModelV1, JSONObject } from '@sine-ai/provider';
-import { snapshotAssetMapping } from '@sine-ai/provider-utils';
+import type { AssetModelMapping, AssetModelV1, JSONObject } from '@sinestack/ai-provider';
+import { snapshotAssetMapping } from '@sinestack/ai-provider-utils';
 import { WaveSpeedAssetModel } from './wavespeed-asset-model.js';
 import type { WaveSpeedAssetDefinition, WaveSpeedAssetProviderSettings } from './wavespeed-asset-model.js';
 

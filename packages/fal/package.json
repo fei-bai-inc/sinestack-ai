@@ -1,7 +1,7 @@
 {
-  "name": "@sine-ai/fal",
+  "name": "@sinestack/ai-fal",
   "version": "0.1.0",
-  "description": "fal queue provider for Sine AI asset generation",
+  "description": "fal queue provider for SineStack AI asset generation",
   "type": "module",
   "license": "Apache-2.0",
   "sideEffects": false,
@@ -9,8 +9,8 @@
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "engines": { "node": ">=22" },
   "dependencies": {
-    "@sine-ai/provider": "0.1.0",
-    "@sine-ai/provider-utils": "0.1.0"
+    "@sinestack/ai-provider": "0.1.0",
+    "@sinestack/ai-provider-utils": "0.1.0"
   },
-  "repository": { "type": "git", "url": "https://github.com/fei-bai-inc/sine-ai.git", "directory": "packages/fal" }
+  "repository": { "type": "git", "url": "https://github.com/fei-bai-inc/sinestack-ai.git", "directory": "packages/fal" }
 }

@@ -1,4 +1,4 @@
-import type { AssetOperation } from '@sine-ai/provider';
+import type { AssetOperation } from '@sinestack/ai-provider';
 import type { AssetPhase } from './types.js';
 
 export class AssetExecutionError extends Error {

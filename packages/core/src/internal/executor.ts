@@ -1,6 +1,6 @@
 /**
  * Adapted from AI SDK 7.0.155's video start/status orchestration and retry policy.
- * Copyright 2023 Vercel, Inc. Copyright 2026 Sine AI contributors.
+ * Copyright 2023 Vercel, Inc. Copyright 2026 SineStack AI contributors.
  * Changes: asset operation envelopes and result mapping; retry, signal and
  * callback policies are delegated to the pinned AI SDK implementation.
  * SPDX-License-Identifier: Apache-2.0
@@ -8,7 +8,7 @@
 import { delay, generateId, withUserAgentSuffix } from '@ai-sdk/provider-utils';
 import type {
   AssetModelV1, AssetModelV1Result, AssetOperation, AssetResponse, SharedV4Warning,
-} from '@sine-ai/provider';
+} from '@sinestack/ai-provider';
 import { AssetAbortError, AssetExecutionError, AssetTimeoutError } from '../errors.js';
 import type {
   AssetAPI, AssetEvent, AssetExecutionOptions, AssetHooks, AssetPhase, AssetPollOptions,
@@ -76,7 +76,7 @@ export async function execute<INPUT, KIND extends string, RESULT>(
   const ctx: ExecutionContext<INPUT, KIND> = {
     model, options, api, callId: `asset_${generateId()}`,
     signal: mergeAbortSignals(options.abortSignal, options.timeoutMs) ?? new AbortController().signal,
-    headers: withUserAgentSuffix(options.headers ?? {}, 'sine-ai/0.1.0'), warnings: [], responses: [],
+    headers: withUserAgentSuffix(options.headers ?? {}, 'sinestack-ai/0.1.0'), warnings: [], responses: [],
     ...(operation ? { operation } : {}),
   };
   try {
@@ -117,14 +117,14 @@ export function submissionHeaders(headers: Record<string, string>): { headers: R
   const normalized = new Headers(headers);
   const existing = normalized.get('idempotency-key');
   if (existing !== null && !existing.trim()) throw new TypeError('idempotency-key must not be empty');
-  const idempotencyKey = existing ?? `sine_asset_${generateId()}`;
+  const idempotencyKey = existing ?? `sinestack_asset_${generateId()}`;
   normalized.set('idempotency-key', idempotencyKey);
   return { headers: Object.fromEntries(normalized.entries()), idempotencyKey };
 }
 
 export async function submit<INPUT, KIND extends string>(
   ctx: ExecutionContext<INPUT, KIND>, input: INPUT,
-  providerOptions: import('@sine-ai/provider').SharedV4ProviderOptions, webhookUrl?: string,
+  providerOptions: import('@sinestack/ai-provider').SharedV4ProviderOptions, webhookUrl?: string,
 ): Promise<StartAssetResult<KIND>> {
   if (!ctx.model.doStart || !ctx.model.doStatus) throw new AssetExecutionError('This asset model does not support asynchronous submission', { code: 'ASSET_UNSUPPORTED' });
   const submission = submissionHeaders(ctx.headers);

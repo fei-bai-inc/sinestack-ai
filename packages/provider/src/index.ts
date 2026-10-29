@@ -1,6 +1,6 @@
 /**
  * Asset contracts derived from the structure of AI SDK 7's VideoModelV4.
- * Copyright 2023 Vercel, Inc. Copyright 2026 Sine AI contributors.
+ * Copyright 2023 Vercel, Inc. Copyright 2026 SineStack AI contributors.
  * Modified for arbitrary typed inputs, asset references, and explicit lifecycle capabilities.
  * SPDX-License-Identifier: Apache-2.0
  */

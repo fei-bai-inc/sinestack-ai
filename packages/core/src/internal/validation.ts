@@ -1,4 +1,4 @@
-import type { AssetFile, AssetModelV1, AssetModelV1Result, AssetModelV1Status, AssetOperation, JSONValue } from '@sine-ai/provider';
+import type { AssetFile, AssetModelV1, AssetModelV1Result, AssetModelV1Status, AssetOperation, JSONValue } from '@sinestack/ai-provider';
 
 export function milliseconds(value: number | undefined, name: string, allowZero = false): void {
   if (value !== undefined && (!Number.isSafeInteger(value) || value < (allowZero ? 0 : 1) || value > 2_147_483_647)) {

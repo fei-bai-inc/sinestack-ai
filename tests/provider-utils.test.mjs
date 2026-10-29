@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
-import { AssetProviderTransport, jsonObject, jsonValue, mapAssetResult, snapshotAssetMapping } from '@sine-ai/provider-utils';
+import { AssetProviderTransport, jsonObject, jsonValue, mapAssetResult, snapshotAssetMapping } from '@sinestack/ai-provider-utils';
 
 const options = () => ({ headers: {}, abortSignal: new AbortController().signal });
 const settings = fetch => ({
-  provider: 'fixture', apiKey: 'fixture-key', environmentVariableName: 'SINE_FIXTURE_KEY',
+  provider: 'fixture', apiKey: 'fixture-key', environmentVariableName: 'SINESTACK_FIXTURE_KEY',
   baseURL: 'https://api.example.test/proxy/v1', fetch,
 });
 

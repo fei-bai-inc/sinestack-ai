@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
-import { cancelAsset, getAssetStatus, startAsset, waitForAsset } from '@sine-ai/core';
+import { cancelAsset, getAssetStatus, startAsset, waitForAsset } from '@sinestack/ai-core';
 import {
   createReplicateAssetProvider, ReplicateAssetModel,
-} from '@sine-ai/replicate';
+} from '@sinestack/ai-replicate';
 
 const MUSIC_MODEL = 'future-lab/new-music-model';
 const THREE_D_MODEL = 'future-lab/new-3d-model';
@@ -65,7 +65,7 @@ function genericDefinition(extra = {}) {
 
 test('Replicate official submission makes one native POST with protected credentials and completed webhooks', async () => {
   const wire = scripted(json(prediction(), 201));
-  const model = createReplicateAssetProvider({ apiKey: 'test-token', fetch: wire.fetch, headers: { 'x-app': 'sine' }, name: 'replicate-test' }).music(MUSIC_MODEL);
+  const model = createReplicateAssetProvider({ apiKey: 'test-token', fetch: wire.fetch, headers: { 'x-app': 'sinestack' }, name: 'replicate-test' }).music(MUSIC_MODEL);
   const options = startOptions(undefined, {
     providerOptions: { replicate: { audio_format: 'wav', sample_rate: 44100, bitrate: 128000 } },
     headers: { 'x-request': 'one', Authorization: 'must-not-override' },
@@ -85,7 +85,7 @@ test('Replicate official submission makes one native POST with protected credent
   assert.equal(call.redirect, 'error');
   assert.equal(call.signal, options.abortSignal);
   assert.equal(call.headers.get('authorization'), 'Bearer test-token');
-  assert.equal(call.headers.get('x-app'), 'sine');
+  assert.equal(call.headers.get('x-app'), 'sinestack');
   assert.equal(call.headers.get('x-request'), 'one');
   assert.equal(call.headers.has('prefer'), false);
   assert.equal(call.headers.has('idempotency-key'), false);

@@ -1,5 +1,5 @@
-import type { AssetModelV1, JSONObject } from '@sine-ai/provider';
-import { snapshotAssetMapping } from '@sine-ai/provider-utils';
+import type { AssetModelV1, JSONObject } from '@sinestack/ai-provider';
+import { snapshotAssetMapping } from '@sinestack/ai-provider-utils';
 import { ReplicateAssetModel } from './replicate-asset-model.js';
 import type { ReplicateAssetDefinition, ReplicateAssetMapping, ReplicateAssetProviderSettings } from './replicate-asset-model.js';
 

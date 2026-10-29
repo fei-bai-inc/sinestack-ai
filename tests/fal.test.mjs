@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { APICallError } from '@ai-sdk/provider';
-import { createFalAssetProvider } from '@sine-ai/fal';
+import { createFalAssetProvider } from '@sinestack/ai-fal';
 
 const THREE_D_MODEL = 'future-org/new-mesh/v99';
 const SOUND_EFFECT_MODEL = 'future-org/new-sound/v99';
@@ -57,10 +57,10 @@ test('fal submission uses the real queue protocol once, with webhook, headers, a
   const payload = submitBody();
   payload.status_url += '?logs=1';
   const wire = scripted(json(payload, 202, { 'x-fal-request-id': REQUEST_ID }));
-  const fal = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch, headers: { 'x-app': 'sine' }, name: 'fal-test' });
+  const fal = createFalAssetProvider({ apiKey: 'test:key', fetch: wire.fetch, headers: { 'x-app': 'sinestack' }, name: 'fal-test' });
   const model = fal.threeD(THREE_D_MODEL);
   const options = startOptions(undefined, {
-    webhookUrl: 'https://sine.example/callback?tenant=a&task=b',
+    webhookUrl: 'https://sinestack.example/callback?tenant=a&task=b',
     headers: { 'x-call': 'submit', Authorization: 'must-not-replace-configured-key' },
     providerOptions: { fal: { face_count: 500_000, enable_pbr: true, generate_type: 'Normal' } },
   });
@@ -80,7 +80,7 @@ test('fal submission uses the real queue protocol once, with webhook, headers, a
   assert.equal(call.redirect, 'error');
   assert.equal(call.headers.get('authorization'), 'Key test:key');
   assert.equal(call.headers.get('content-type'), 'application/json');
-  assert.equal(call.headers.get('x-app'), 'sine');
+  assert.equal(call.headers.get('x-app'), 'sinestack');
   assert.equal(call.headers.get('x-call'), 'submit');
   assert.equal(call.headers.has('idempotency-key'), false);
   assert.deepEqual(JSON.parse(call.body), {
@@ -481,7 +481,7 @@ test('invalid model paths, base URLs, and webhook URLs fail locally', async () =
   for (const baseURL of ['file:///tmp', 'https://user:pass@queue.fal.run', `${BASE}?token=secret`]) {
     assert.throws(() => createFalAssetProvider({ baseURL }).threeD(THREE_D_MODEL), TypeError);
   }
-  for (const webhookUrl of ['javascript:alert(1)', 'https://user:pass@sine.example/callback', 'relative/path']) {
+  for (const webhookUrl of ['javascript:alert(1)', 'https://user:pass@sinestack.example/callback', 'relative/path']) {
     await assert.rejects(fal.threeD(THREE_D_MODEL).doStart(startOptions(undefined, { webhookUrl })), TypeError);
   }
   assert.equal(wire.calls.length, 0);

@@ -47,12 +47,12 @@ interface AssetModelMapping<INPUT> {
 }
 ```
 
-缺省 mapInput 时使用安全的原生 JSON 快照；缺省 mapResult 时使用公开的 `@sine-ai/provider-utils.mapAssetResult`。可以只替换其中一个。提供的函数会在提交前校验，配置和函数引用会快照保存。
+缺省 mapInput 时使用安全的原生 JSON 快照；缺省 mapResult 时使用公开的 `@sinestack/ai-provider-utils.mapAssetResult`。可以只替换其中一个。提供的函数会在提交前校验，配置和函数引用会快照保存。
 
 例如应用选择统一业务字段并解析一个特殊 mesh 字段：
 
 ```ts
-import type { AssetModelMapping } from '@sine-ai/provider';
+import type { AssetModelMapping } from '@sinestack/ai-provider';
 
 interface GeometryRequest { description: string; detail: number }
 

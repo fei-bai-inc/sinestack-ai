@@ -1,8 +1,8 @@
 # 上游来源与升级流程
 
-Sine AI 的资产协议和必要编排参考 Vercel AI SDK 7 的视频生成实现。基础 retry、AbortSignal 合并和 callback 分发直接调用上游 helper，采用其行为约定。通用资产的 submit/status/poll/result/cancel 仍是本项目需要维护的部分；上游当前没有可供 `AssetModelV1` 直接使用的通用 executor。
+SineStack AI 的资产协议和必要编排参考 Vercel AI SDK 7 的视频生成实现。基础 retry、AbortSignal 合并和 callback 分发直接调用上游 helper，采用其行为约定。通用资产的 submit/status/poll/result/cancel 仍是本项目需要维护的部分；上游当前没有可供 `AssetModelV1` 直接使用的通用 executor。
 
-本项目与相关上游包均使用 **Apache-2.0**。保留上游 `Copyright 2023 Vercel, Inc.`、Sine AI 修改归属、完整 `LICENSE`、各包 `NOTICE` 和派生源码说明。
+本项目与相关上游包均使用 **Apache-2.0**。保留上游 `Copyright 2023 Vercel, Inc.`、SineStack AI 修改归属、完整 `LICENSE`、各包 `NOTICE` 和派生源码说明。
 
 ## 精确基线与 internal 边界
 
@@ -12,7 +12,7 @@ Sine AI 的资产协议和必要编排参考 Vercel AI SDK 7 的视频生成实�
 | `@ai-sdk/provider` | `4.0.34` | 协议来源及公共 JSON、warning、metadata 类型。 |
 | `@ai-sdk/provider-utils` | `5.0.70` | 上游 retry primitive、delay、HTTP/schema 和数据转换工具。 |
 
-`@sine-ai/core` 的 `ai` peer dependency 精确锁定 `7.0.155`，不使用 `^` 或 `~`。内部接口虽然可通过 package exports 导入，仍需要随版本升级审阅。
+`@sinestack/ai-core` 的 `ai` peer dependency 精确锁定 `7.0.155`，不使用 `^` 或 `~`。内部接口虽然可通过 package exports 导入，仍需要随版本升级审阅。
 
 三个 internal 导入统一放在 [`internal/sdk.ts`](../packages/core/src/internal/sdk.ts)：
 

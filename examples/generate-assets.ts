@@ -2,9 +2,9 @@
 // Server-only Node.js example. Keep FAL_KEY and this module out of browser bundles.
 // Importing this module performs no generation. Calling generateGameAssets starts billable jobs.
 import process from 'node:process';
-import { generate3D, generateSoundEffect } from '@sine-ai/core';
-import type { AssetHooks } from '@sine-ai/core';
-import { createFalAssetProvider } from '@sine-ai/fal';
+import { generate3D, generateSoundEffect } from '@sinestack/ai-core';
+import type { AssetHooks } from '@sinestack/ai-core';
+import { createFalAssetProvider } from '@sinestack/ai-fal';
 
 export interface GenerateGameAssetsOptions {
   abortSignal?: AbortSignal;

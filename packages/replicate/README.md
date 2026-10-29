@@ -1,10 +1,10 @@
-# @sine-ai/replicate
+# @sinestack/ai-replicate
 
-Replicate 的通用 Sine AI asset adapter。任意符合平台 ID 格式的模型都可以使用同一套提交、查询、恢复、取消协议，无需在 SDK 中登记模型或添加白名单。
+Replicate 的通用 SineStack AI asset adapter。任意符合平台 ID 格式的模型都可以使用同一套提交、查询、恢复、取消协议，无需在 SDK 中登记模型或添加白名单。
 
 ```ts
-import { generateMusic } from '@sine-ai/core';
-import { createReplicateAssetProvider } from '@sine-ai/replicate';
+import { generateMusic } from '@sinestack/ai-core';
+import { createReplicateAssetProvider } from '@sinestack/ai-replicate';
 
 const replicate = createReplicateAssetProvider(); // REPLICATE_API_TOKEN
 
@@ -46,6 +46,6 @@ const document = replicate.asset<{ title: string }, 'document'>('your-owner/docu
 
 远端取消只有观察到 `canceled` 才报告 `cancelled`，仍在执行时报告 `requested`。已完成或失败的取消竞争需要继续查询同一 operation。Webhook 仅接收 HTTPS URL，并订阅 `completed`；接收方负责签名验证与任务关联。
 
-每个 provider 方法仅执行一次远端操作，等待、重试与生命周期继续使用 `@sine-ai/core`。提交默认不重试，不声明提交幂等。文件不自动下载，需要 bytes 时显式调用 `materializeAsset`。
+每个 provider 方法仅执行一次远端操作，等待、重试与生命周期继续使用 `@sinestack/ai-core`。提交默认不重试，不声明提交幂等。文件不自动下载，需要 bytes 时显式调用 `materializeAsset`。
 
 协议来源：[Replicate HTTP API](https://replicate.com/docs/reference/http)。测试使用 mock fetch，没有执行真实计费 API 请求。

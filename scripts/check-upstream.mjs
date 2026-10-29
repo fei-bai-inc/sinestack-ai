@@ -2,7 +2,7 @@
 /**
  * Check the reviewed AI SDK source snapshot against installed npm packages.
  * This script only reads local files. It never downloads or rewrites a baseline.
- * Copyright 2026 Sine AI contributors.
+ * Copyright 2026 SineStack AI contributors.
  * SPDX-License-Identifier: Apache-2.0
  */
 import { createHash } from 'node:crypto';

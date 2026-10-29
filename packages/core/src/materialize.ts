@@ -1,6 +1,6 @@
 import { createDownload, DefaultGeneratedFile, type GeneratedFile } from 'ai';
 import { convertBase64ToUint8Array } from '@ai-sdk/provider-utils';
-import type { AssetFile } from '@sine-ai/provider';
+import type { AssetFile } from '@sinestack/ai-provider';
 import { httpURL, validateFile } from './internal/validation.js';
 
 export interface MaterializeAssetOptions {

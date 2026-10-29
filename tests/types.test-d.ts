@@ -8,14 +8,14 @@ import {
   materializeAsset,
   startAsset,
   waitForAsset,
-} from '@sine-ai/core';
+} from '@sinestack/ai-core';
 import type {
   AssetHooks,
   AssetRetryOptions,
   GenerateAssetResult,
   GetAssetStatusResult,
   StartAssetResult,
-} from '@sine-ai/core';
+} from '@sinestack/ai-core';
 import type {
   AssetModelV1,
   AssetOperation,
@@ -24,13 +24,13 @@ import type {
   MusicInput,
   Animation3DInput,
   JSONObject,
-} from '@sine-ai/provider';
-import { createFalAssetProvider } from '@sine-ai/fal';
-import { createWaveSpeedAssetProvider } from '@sine-ai/wavespeed';
-import { createReplicateAssetProvider } from '@sine-ai/replicate';
+} from '@sinestack/ai-provider';
+import { createFalAssetProvider } from '@sinestack/ai-fal';
+import { createWaveSpeedAssetProvider } from '@sinestack/ai-wavespeed';
+import { createReplicateAssetProvider } from '@sinestack/ai-replicate';
 import type { GeneratedFile } from 'ai';
 // @ts-expect-error Observation hook failures no longer have a custom exported error class.
-import type { AssetHookError } from '@sine-ai/core';
+import type { AssetHookError } from '@sinestack/ai-core';
 
 declare function expectType<T>(value: T): void;
 

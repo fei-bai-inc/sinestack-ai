@@ -12,7 +12,7 @@
       "version": "7.0.155",
       "license": "Apache-2.0",
       "consumers": [
-        "@sine-ai/core"
+        "@sinestack/ai-core"
       ],
       "files": [
         {
@@ -62,9 +62,9 @@
       "version": "4.0.34",
       "license": "Apache-2.0",
       "consumers": [
-        "@sine-ai/provider",
-        "@sine-ai/core",
-        "@sine-ai/provider-utils"
+        "@sinestack/ai-provider",
+        "@sinestack/ai-core",
+        "@sinestack/ai-provider-utils"
       ],
       "files": [
         {
@@ -99,8 +99,8 @@
       "version": "5.0.70",
       "license": "Apache-2.0",
       "consumers": [
-        "@sine-ai/core",
-        "@sine-ai/provider-utils"
+        "@sinestack/ai-core",
+        "@sinestack/ai-provider-utils"
       ],
       "files": [
         {
@@ -137,7 +137,7 @@
     }
   ],
   "intentionalDifferences": [
-    "Generic asset submit/status/poll/result/cancel orchestration remains owned by Sine AI; the upstream SDK does not expose a generic AssetModelV1 executor.",
+    "Generic asset submit/status/poll/result/cancel orchestration remains owned by SineStack AI; the upstream SDK does not expose a generic AssetModelV1 executor.",
     "Retry policy, signal composition, and callback merging are delegated directly to pinned AI SDK helpers through one internal integration module.",
     "Submission retries default to zero and require explicit model idempotency capability for a positive count; status retries default to two.",
     "The asset layer does not maintain its own Retry-After/backoff algorithm or per-attempt/retry callback protocol.",

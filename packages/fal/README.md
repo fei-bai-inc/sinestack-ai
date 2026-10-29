@@ -1,10 +1,10 @@
-# @sine-ai/fal
+# @sinestack/ai-fal
 
-fal 的通用 Sine AI asset provider。任意采用 fal queue 协议的文件生成 endpoint 都可以直接指定 modelId 接入；SDK 不维护可用模型名单，不选择默认模型，也不把某个模型的参数 schema 用于其他模型。
+fal 的通用 SineStack AI asset provider。任意采用 fal queue 协议的文件生成 endpoint 都可以直接指定 modelId 接入；SDK 不维护可用模型名单，不选择默认模型，也不把某个模型的参数 schema 用于其他模型。
 
 ```ts
-import { generateMusic, generateAsset } from '@sine-ai/core';
-import { createFalAssetProvider } from '@sine-ai/fal';
+import { generateMusic, generateAsset } from '@sinestack/ai-core';
+import { createFalAssetProvider } from '@sinestack/ai-fal';
 
 const fal = createFalAssetProvider(); // FAL_KEY
 const modelId = process.env.FAL_MUSIC_MODEL_ID!;
@@ -64,4 +64,4 @@ const model = fal.music<{ description: string }>('your-owner/custom-music', {
 
 `startAsset` 返回的 operation 可持久化，随后用同一连接和模型调用 `getAssetStatus`、`waitForAsset` 或 `cancelAsset`。operation 不包含 API key；应用仍需保存原连接身份。
 
-所有输入和输出映射都复用同一执行路径。adapter 不实现重试、轮询、hook 或独立 abort 引擎。fal 单次 HTTP 操作通过 `@sine-ai/provider-utils` 复用 AI SDK helpers；核心执行语义见仓库 [README](../../README.md)。
+所有输入和输出映射都复用同一执行路径。adapter 不实现重试、轮询、hook 或独立 abort 引擎。fal 单次 HTTP 操作通过 `@sinestack/ai-provider-utils` 复用 AI SDK helpers；核心执行语义见仓库 [README](../../README.md)。

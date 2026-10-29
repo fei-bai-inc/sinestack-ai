@@ -1,21 +1,21 @@
-# Sine AI
+# SineStack AI
 
 基于 **Vercel AI SDK 7** 扩展的 TypeScript 资产生成 SDK。3D、音效、音乐、3D 动作、文档及自定义资产类型共用 `AssetModelV1`，通过同一套生成、提交、查询、等待和取消接口执行。
 
 **Provider adapter 实现平台协议，不维护模型目录。** fal、WaveSpeed、Replicate 的所有入口都接受显式模型 ID；没有默认模型、型号白名单或针对某个模型的固定参数 schema。新增同协议模型无需登记到 SDK 或更新 SDK。
 
-重试策略、AbortSignal 合并和 callback 分发直接复用 AI SDK。资产协议所需的 submit/status/poll/result/cancel 编排仍由 Sine AI 维护；上游当前没有可直接接入 `AssetModelV1` 的通用 executor。
+重试策略、AbortSignal 合并和 callback 分发直接复用 AI SDK。资产协议所需的 submit/status/poll/result/cancel 编排仍由 SineStack AI 维护；上游当前没有可直接接入 `AssetModelV1` 的通用 executor。
 
 ## 包与维护边界
 
 | 包 | 职责 |
 |---|---|
-| `@sine-ai/provider` | 版本化资产协议、结果、operation 和可选的外部映射接口。 |
-| `@sine-ai/core` | 唯一的资产编排、按 kind 的薄入口、恢复和显式文件物化。 |
-| `@sine-ai/provider-utils` | 共享 JSON/连接校验、默认文件解析；HTTP 请求和响应处理委托给 AI SDK 公开 helpers。 |
-| `@sine-ai/fal` | fal queue 的提交、查询、结果获取、取消协议。 |
-| `@sine-ai/wavespeed` | WaveSpeed prediction 的提交和查询协议。 |
-| `@sine-ai/replicate` | Replicate prediction 的提交、查询、取消和固定版本协议。 |
+| `@sinestack/ai-provider` | 版本化资产协议、结果、operation 和可选的外部映射接口。 |
+| `@sinestack/ai-core` | 唯一的资产编排、按 kind 的薄入口、恢复和显式文件物化。 |
+| `@sinestack/ai-provider-utils` | 共享 JSON/连接校验、默认文件解析；HTTP 请求和响应处理委托给 AI SDK 公开 helpers。 |
+| `@sinestack/ai-fal` | fal queue 的提交、查询、结果获取、取消协议。 |
+| `@sinestack/ai-wavespeed` | WaveSpeed prediction 的提交和查询协议。 |
+| `@sinestack/ai-replicate` | Replicate prediction 的提交、查询、取消和固定版本协议。 |
 
 每个 adapter 方法只完成一次 provider 操作，不增加自己的 polling、重试、abort 或 hook 执行机制。kind 入口只标记资产类型，不选择模型，也不推断远端模型能力。
 
@@ -24,8 +24,8 @@
 **这些包尚未发布到 npm。** 当前通过仓库的 npm workspaces 使用，需要 Node.js 22 或 24：
 
 ```sh
-git clone https://github.com/fei-bai-inc/sine-ai.git
-cd sine-ai
+git clone https://github.com/fei-bai-inc/sinestack-ai.git
+cd sinestack-ai
 npm ci
 npm run build
 ```
@@ -51,11 +51,11 @@ provider.asset(modelId, { kind: 'document' });
 调用方选择平台上实际存在、接受相应任务的模型，并按该模型的原生 schema 提供 `input`。SDK 校验 JSON 与协议字段，不把一个模型的参数规则套在整类能力上。
 
 ```ts
-import { generateMusic, generate3D, generateAsset } from '@sine-ai/core';
-import type { JSONObject } from '@sine-ai/provider';
-import { createFalAssetProvider } from '@sine-ai/fal';
-import { createWaveSpeedAssetProvider } from '@sine-ai/wavespeed';
-import { createReplicateAssetProvider } from '@sine-ai/replicate';
+import { generateMusic, generate3D, generateAsset } from '@sinestack/ai-core';
+import type { JSONObject } from '@sinestack/ai-provider';
+import { createFalAssetProvider } from '@sinestack/ai-fal';
+import { createWaveSpeedAssetProvider } from '@sinestack/ai-wavespeed';
+import { createReplicateAssetProvider } from '@sinestack/ai-replicate';
 
 const fal = createFalAssetProvider();
 const wavespeed = createWaveSpeedAssetProvider();
@@ -91,8 +91,8 @@ async function createDocument(modelId: string, input: JSONObject) {
 应用需要统一业务输入或处理特殊输出时，自行提供映射：
 
 ```ts
-import { generateMusic } from '@sine-ai/core';
-import type { AssetModelMapping } from '@sine-ai/provider';
+import { generateMusic } from '@sinestack/ai-core';
+import type { AssetModelMapping } from '@sinestack/ai-provider';
 
 interface SongRequest {
   description: string;
@@ -129,7 +129,7 @@ const result = await generateMusic({
 URL 默认保留引用，不隐式下载。需要 bytes 时：
 
 ```ts
-import { materializeAsset } from '@sine-ai/core';
+import { materializeAsset } from '@sinestack/ai-core';
 
 const file = await materializeAsset(result.asset, {
   maxBytes: 64 * 1024 * 1024,
@@ -141,7 +141,7 @@ const file = await materializeAsset(result.asset, {
 ## 提交、持久化与恢复
 
 ```ts
-import { startAsset, getAssetStatus, waitForAsset, cancelAsset } from '@sine-ai/core';
+import { startAsset, getAssetStatus, waitForAsset, cancelAsset } from '@sinestack/ai-core';
 
 const model = fal.threeD('your-owner/your-geometry-model');
 const started = await startAsset({
@@ -185,7 +185,7 @@ const result = await waitForAsset({ model, operation: started.operation });
 | Hooks | 五个观测事件：onStart、onOperation、onProgress、onFinish、onError；SDK await 并忽略 callback 错误。 |
 | 文件 | 保持引用，显式物化；没有后台存储、数据库或持久化调度器。 |
 
-`@sine-ai/provider-utils` 复用 AI SDK 的 GET/POST 与 response handlers，不维护另一套 retry policy。fal PUT 取消没有上游公开请求 helper，因此保留一次薄 fetch，并复用相同 SDK response handlers。
+`@sinestack/ai-provider-utils` 复用 AI SDK 的 GET/POST 与 response handlers，不维护另一套 retry policy。fal PUT 取消没有上游公开请求 helper，因此保留一次薄 fetch，并复用相同 SDK response handlers。
 
 ## 开发与示例
 
@@ -205,4 +205,4 @@ node --experimental-strip-types examples/media-providers.ts
 
 基线为 `ai@7.0.155`、`@ai-sdk/provider@4.0.34`、`@ai-sdk/provider-utils@5.0.70`。core 的 `ai` peer dependency 精确锁定；internal 导入集中在 `packages/core/src/internal/sdk.ts`，升级需审阅。
 
-项目采用 Apache-2.0，保留 Vercel 与 Sine AI 的归属。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE)、[UPSTREAM.md](docs/UPSTREAM.md)、[ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [迁移说明](docs/MIGRATION.md)。
+项目采用 Apache-2.0，保留 Vercel 与 SineStack AI 的归属。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE)、[UPSTREAM.md](docs/UPSTREAM.md)、[ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [迁移说明](docs/MIGRATION.md)。

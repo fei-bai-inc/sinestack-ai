@@ -1,6 +1,6 @@
 # 资产生成架构与维护边界
 
-Sine AI 扩展 AI SDK 尚未提供的资产协议。3D、音效和其他类型化入口共用同一套资产编排；重试策略、signal 合并和观测回调分发直接交给 AI SDK。**这里仍有 Sine AI 自有的 submit/status/poll/result/cancel 编排，并不是接入了上游现成的通用 Asset executor。**
+SineStack AI 扩展 AI SDK 尚未提供的资产协议。3D、音效和其他类型化入口共用同一套资产编排；重试策略、signal 合并和观测回调分发直接交给 AI SDK。**这里仍有 SineStack AI 自有的 submit/status/poll/result/cancel 编排，并不是接入了上游现成的通用 Asset executor。**
 
 ## 哪些直接复用，哪些仍需维护
 
@@ -11,8 +11,8 @@ Sine AI 扩展 AI SDK 尚未提供的资产协议。3D、音效和其他类型�
 | Callback await 与错误处理 | AI SDK `mergeCallbacks`；等待完成，忽略回调抛错/拒绝。 |
 | Delay、ID、HTTP/schema、字节转换 | 复用 `@ai-sdk/provider-utils` 的相关工具。 |
 | 文件下载与内存文件结果 | AI SDK `createDownload`、`DefaultGeneratedFile`，由显式物化入口使用。 |
-| Asset kind、输入类型、结果和 operation envelope | Sine AI provider 协议。 |
-| 选择 direct/async、提交、查询、poll、取消与结果映射 | Sine AI 必要的资产编排。 |
+| Asset kind、输入类型、结果和 operation envelope | SineStack AI provider 协议。 |
+| 选择 direct/async、提交、查询、poll、取消与结果映射 | SineStack AI 必要的资产编排。 |
 
 唯一的 internal 依赖入口是 [`packages/core/src/internal/sdk.ts`](../packages/core/src/internal/sdk.ts)：
 
@@ -26,12 +26,12 @@ core 精确依赖 `ai@7.0.155` 的这三个内部导出。其他源码通过这�
 
 | 包 | 职责 |
 |---|---|
-| `@sine-ai/provider` | `AssetModelV1`、资产文件、operation/status，以及可注入的 `AssetModelMapping`。 |
-| `@sine-ai/core` | 协议校验、必要的资产编排、类型化 facade 和显式物化。 |
-| `@sine-ai/provider-utils` | 共享 JSON/连接校验、默认文件解析与单次 HTTP；调用公开 AI SDK 请求和响应 helpers。 |
-| `@sine-ai/fal` | 通用 fal queue 协议；模型由调用方选择，输入/结果可外部映射。 |
-| `@sine-ai/wavespeed` | 通用 WaveSpeed prediction 协议，不维护模型目录。 |
-| `@sine-ai/replicate` | 通用 Replicate prediction 与固定版本协议，不维护模型目录。 |
+| `@sinestack/ai-provider` | `AssetModelV1`、资产文件、operation/status，以及可注入的 `AssetModelMapping`。 |
+| `@sinestack/ai-core` | 协议校验、必要的资产编排、类型化 facade 和显式物化。 |
+| `@sinestack/ai-provider-utils` | 共享 JSON/连接校验、默认文件解析与单次 HTTP；调用公开 AI SDK 请求和响应 helpers。 |
+| `@sinestack/ai-fal` | 通用 fal queue 协议；模型由调用方选择，输入/结果可外部映射。 |
+| `@sinestack/ai-wavespeed` | 通用 WaveSpeed prediction 协议，不维护模型目录。 |
+| `@sinestack/ai-replicate` | 通用 Replicate prediction 与固定版本协议，不维护模型目录。 |
 
 三个远端 adapter 共用 provider-utils 的 transport。这个工具层只验证目的地、构造认证 header 并发起一次请求；它没有循环、重试策略、生命周期或 AbortController。GET/POST、JSON 响应解析与 HTTP 错误分类直接使用 AI SDK 公开实现。fal 取消所需的 PUT 没有对应的 SDK 公开请求 helper，因此只保留一次 fetch，并使用相同的 SDK response handlers。
 
@@ -62,7 +62,7 @@ Provider operation 还校验原连接的 API 地址及远端任务标识。它�
 
 ## Retry：只保留资产相关的选择
 
-Sine AI 保留每阶段的 retry 次数与幂等门：start/generate/cancel 默认 `0`，status 默认 `2`。正数 start/generate retry 需要对应模型能力。每次逻辑提交的幂等键在重试之外生成，同一提交的重试保持不变。
+SineStack AI 保留每阶段的 retry 次数与幂等门：start/generate/cancel 默认 `0`，status 默认 `2`。正数 start/generate retry 需要对应模型能力。每次逻辑提交的幂等键在重试之外生成，同一提交的重试保持不变。
 
 实际 retry 策略直接由 `prepareRetries` 提供。资产层不实现独立的错误分类、Retry-After 解析、退避上限或 initial delay。也不暴露 `onAttempt`、`onRetry` 作为第二套 retry 观测协议。
 
@@ -94,6 +94,6 @@ webhook 通知等待保留局部 `Promise.race`：等待通知或 SDK `delay` �
 
 新增 kind、输入/结果映射和单次 provider 方法，不新增执行框架。协议测试继续覆盖能力选择、查询不重提、幂等键稳定、operation 校验、合作式取消、webhook fallback、callback 错误被忽略和 URL 不自动下载。
 
-Node.js 22/24 是 CI 配置的环境；尚未完成 Cloudflare/workerd 运行验证。Sine AI 不实现数据库、队列、租约或崩溃恢复服务，外部任务系统可以持久化 operation 并分次调用 start/status/cancel。
+Node.js 22/24 是 CI 配置的环境；尚未完成 Cloudflare/workerd 运行验证。SineStack AI 不实现数据库、队列、租约或崩溃恢复服务，外部任务系统可以持久化 operation 并分次调用 start/status/cancel。
 
 上游版本和源文件 hash 的检查见 [UPSTREAM.md](UPSTREAM.md)；这次收缩删除的 API 和行为承诺见 [MIGRATION.md](MIGRATION.md)。

@@ -1,12 +1,12 @@
-Sine AI
-Copyright 2026 Sine AI contributors.
+SineStack AI
+Copyright 2026 SineStack AI contributors.
 
 This product includes software derived from Vercel AI SDK:
 Copyright 2023 Vercel, Inc.
 https://github.com/vercel/ai
 Licensed under the Apache License, Version 2.0.
 
-The @sine-ai/provider asset contracts are adapted from the structure of
+The @sinestack/ai-provider asset contracts are adapted from the structure of
 @ai-sdk/provider 4.0.34 VideoModelV4. Asset-specific submission, status,
 and polling logic is adapted from ai 7.0.155 video generation APIs.
 
@@ -17,7 +17,7 @@ helpers from @ai-sdk/provider-utils 5.0.70 are also used as dependencies.
 Modifications include typed asset facades, serializable operation
 envelopes, explicit submission idempotency capabilities, remote
 cancellation, and URL-preserving results. Asset orchestration remains
-part of Sine AI; this is not an upstream generic asset executor.
+part of SineStack AI; this is not an upstream generic asset executor.
 
 The reviewed source files and SHA-256 hashes are listed in upstream.json.
 See docs/UPSTREAM.md for provenance and upgrade policy. Third-party
