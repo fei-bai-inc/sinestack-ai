@@ -1,4 +1,4 @@
-# One-time, feature-branch-only migration. Removed after generated source/lock verification.
+# Final one-time declaration compatibility pass; removed before completion.
 name: Prepare Meshy independent release
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - name: Apply reviewed independent-version migration
+      - name: Version declaration portability fix without cascading dependency changes
         run: node scripts/prepare-meshy-version-policy.mjs
       - name: Regenerate the lockfile using npm
         run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
@@ -36,10 +36,10 @@ jobs:
         run: |
           test "$GITHUB_REF" = refs/heads/feat/meshy-provider
           test "$(git ls-remote origin refs/heads/feat/meshy-provider | cut -f1)" = "$GITHUB_SHA"
-          git add scripts/release.mjs scripts/smoke-packages.mjs scripts/version-policy.mjs scripts/publish.mjs tests/release.test.mjs tests/version-policy.test.mjs packages/provider/package.json packages/provider-utils/package.json packages/core/package.json packages/meshy/package.json packages/core/src/internal/runtime.ts tests/integration.test.mjs package-lock.json README.md docs/PUBLISHING.md docs/MESHY.md
+          git add packages/tripo/package.json package-lock.json docs/MESHY.md
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix(release): version Meshy changes independently and preserve existing dependency pins'
+          git commit -m 'fix(tripo): version declaration portability fix with unchanged dependency pins'
           git push origin HEAD:refs/heads/feat/meshy-provider
           echo "GENERATED_COMMIT=$(git rev-parse HEAD)"
       - name: Verify installed package behavior without publishing
