@@ -1,0 +1,36 @@
+name: Bug report（简体中文）
+description: 报告可复现的 SDK、类型或仓库流程问题
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        [English](https://github.com/fei-bai-inc/sinestack-ai/issues/new?template=bug_report.yml) | 简体中文
+
+        安全问题请按 [SECURITY.zh-CN.md](https://github.com/fei-bai-inc/sinestack-ai/blob/main/SECURITY.zh-CN.md) 私密报告。不要提交 API key、签名 URL、私人输入或未脱敏日志。
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: 相关 @sinestack 包版本、Node.js/npm 版本、操作系统，以及供应商/模型版本（如有关）。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 最小复现
+      description: 可复制的最小代码和命令；注明是否需要真实 API。请用占位凭据并删去私人数据。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期与实际结果
+      description: 说明预期行为、实际行为及脱敏后的错误；恢复问题请说明发生在哪个阶段。
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 是否重复提交/计费、是否能从原任务恢复、相关链接或临时规避方式。

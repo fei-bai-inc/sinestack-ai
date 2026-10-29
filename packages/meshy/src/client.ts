@@ -5,6 +5,10 @@ import type { MeshyProviderSettings, MeshyRequestOptions, MeshyTaskRecord } from
 import { boundedNumber, nonempty } from './validation.js';
 import { validateRoute } from './routes.js';
 
+export interface MeshyResponse extends AssetResponse { readonly headers: Record<string, string> }
+export interface MeshyTaskResponse { data: MeshyTaskRecord; response: MeshyResponse }
+export interface MeshyDeleteResult { status: 'deleted'; response: MeshyResponse }
+
 /** Treat IDs as opaque single path segments, never as provider URLs or UUIDs. */
 export function meshyTaskId(value: unknown): string {
   nonempty(value, 'Meshy task ID');
@@ -45,12 +49,13 @@ export class MeshyClient {
     return this.transport.request(`${this.transport.baseURL}/${path}`, method,
       { headers: { ...options.headers }, abortSignal: options.abortSignal ?? new AbortController().signal }, body, allowEmpty);
   }
-  async getTask(route: string, id: string, options?: MeshyRequestOptions) {
+  // Keep public declarations rooted in Meshy's direct protocol dependency.
+  async getTask(route: string, id: string, options?: MeshyRequestOptions): Promise<MeshyTaskResponse> {
     const path = `${validateRoute(route)}/${encodeURIComponent(meshyTaskId(id))}`;
     const response = await this.request(path, 'GET', options);
     return { data: decodeResponse(response, value => parseMeshyTask(value, id)), response: response.response };
   }
-  async deleteTask(route: string, id: string, options?: MeshyRequestOptions) {
+  async deleteTask(route: string, id: string, options?: MeshyRequestOptions): Promise<MeshyDeleteResult> {
     const path = `${validateRoute(route)}/${encodeURIComponent(meshyTaskId(id))}`;
     const response = await this.request(path, 'DELETE', options, undefined, true);
     decodeResponse(response, value => {

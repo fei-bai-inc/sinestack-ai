@@ -1,132 +1,80 @@
 # @sinestack/ai-viggle
 
-Viggle V1 provider for SineStack AI. Typed H3 video, character animation, video remix,
-image generation, upscaling, reusable Character/Motion resources, 3D exports and Gaussian-splat
-scenes use the existing shared execution runtime. Resource APIs also expose rendering drafts,
-SSE, downloads, lists, deletion and account balance.
+English | [简体中文](https://github.com/fei-bai-inc/sinestack-ai/blob/main/packages/viggle/README.zh-CN.md)
 
-## Install and connect
+Generate video and images with Viggle, animate characters, upscale videos, and create reusable Character/Motion resources, skeletal motion exports, and Gaussian-splat scenes.
+
+## Install
 
 ```sh
 npm install @sinestack/ai-viggle @sinestack/ai-core ai@7.0.155
 ```
 
-The current `@sinestack/ai-core` peer requirement is **`ai@7.0.155`**. The provider package uses
-the same AI SDK provider contracts and helpers as the other SineStack providers. Node consumers
-require Node 22 or newer.
+Use Node.js 22 or newer with ESM (`.mjs` or `"type": "module"`). The `ai@7.0.155` peer dependency is required. Set `VIGGLE_API_KEY` on the server.
 
-```ts
+## Generate a video
+
+Save this example as `example.mjs` and run `node example.mjs`. It submits one video generation job, which may use paid Viggle credits.
+
+```js
+import { generateAsset } from '@sinestack/ai-core';
 import { createViggleProvider } from '@sinestack/ai-viggle';
 
-const viggle = createViggleProvider({
-  // Optional in Node: otherwise loaded from VIGGLE_API_KEY.
-  apiKey: process.env.VIGGLE_API_KEY,
-  connectionId: 'production-viggle-account',
-  // The configured base URL includes /v1.
-  // baseURL: 'https://apis.viggle.ai/v1',
-  // fetch: customFetch,
-  // headers: { 'X-Viggle-Source': 'my-app' },
-});
-```
-
-## Generate and resume video
-
-```ts
-import { startAsset, waitForAsset } from '@sinestack/ai-core';
-
-const model = viggle.firstFrameToVideo();
-const started = await startAsset({
-  model,
+const viggle = createViggleProvider();
+const result = await generateAsset({
+  model: viggle.textToVideo(),
   input: {
-    prompt: 'A character waves toward the camera',
+    prompt: 'A paper airplane glides through a sunlit studio',
     quality: 'high',
-    first_frame_image_url: 'https://example.com/character.png',
     duration_s: 5,
     resolution: '1080p',
+    enhance: false,
     seed: 42,
   },
 });
-await saveOperation(started.operation); // Application-owned persistence.
-
-const result = await waitForAsset({ model, operation: started.operation });
-console.log(result.assets); // File references; nothing is downloaded implicitly.
+console.log(result.assets);
 ```
 
-Other video factories are `textToVideo()`, `firstLastFrameToVideo()`, `referenceToVideo()`,
-`characterAnimation()`, `renderVideo()` and `renderDraft()`. `image()` returns an image asset
-model. `upscaleVideo()` returns a processing task driver for `startTask` / `waitForTask`.
+H3 requires both `prompt` and `quality`, including frame- and reference-conditioned generation. Set `enhance: false` to request the prompt unchanged. Results contain file references; download and store required files explicitly.
 
-Keep the returned receipt before waiting and reconstruct the same authorized connection on
-resume. Status polling never creates a replacement job. Draft preparation, uploads, draft
-submission and later upscaling remain explicit; there are no hidden paid chains.
+## Choose a workflow
 
-## Characters, motion and scenes
+| Goal | Viggle factories | Core helper |
+| --- | --- | --- |
+| Generate H3 video | `textToVideo()`, `firstFrameToVideo()`, `firstLastFrameToVideo()`, `referenceToVideo()` | `generateAsset` |
+| Animate or render characters | `characterAnimation()`, `renderVideo()`, `renderDraft()` | `generateAsset` |
+| Generate images | `image()` | `generateAsset` |
+| Upscale video by 2x | `upscaleVideo()` | `startTask` / `waitForTask` |
+| Create reusable resources | `createCharacter()`, `createMotionFromVideo()`, `createMotionFromText()`, `importMotion()` | `startTask` / `waitForTask` |
+| Export standalone skeletal motion | `textToMotion({ format })`, `videoToMotion({ format })` | `generateAnimation3D` |
+| Create and reconstruct scenes | `createScene()`, `createSceneFromPanorama()`, `generateSceneViews()`, `reconstructScene()` | `startTask` / `waitForTask` |
 
-```ts
-import { generateAnimation3D, startTask, waitForTask } from '@sinestack/ai-core';
+Character/Motion tasks return native reusable resource records. Read their exports after the requested processing is ready. The motion asset factories also obtain the selected GLB/FBX export and preserve all returned rigs. Character `.vsplat`, skeletal motion, and scene `.spz` files have distinct uses; a ready 3D Motion does not imply a render-ready 2D driving video.
 
-const characterCreator = viggle.createCharacter();
-const characterStart = await startTask({
-  model: characterCreator,
-  input: { type: 'vsplat', enhance_prompt: 'A small knight in blue armor' },
-});
-const character = await waitForTask({ model: characterCreator, task: characterStart.task });
-const exported = await viggle.characters.export(character.result.id, 'vsplat');
-console.log(exported.vsplat_url);
+## Inputs, resources, and files
 
-const motion = await generateAnimation3D({
-  model: viggle.textToMotion({ format: 'glb' }),
-  input: { text: 'A person walks and turns left', duration_seconds: 5 },
-});
-console.log(motion.assets); // Mixamo, MetaHuman and MetaHuman-body variants.
+Use native parameter names and `Blob` uploads or URL sources. `providerOptions.viggle` supplements input and rejects conflicting keys. Only endpoints with a documented `model` field accept model selection; H3, Animate, Image, and the fixed 2x upscaler use endpoint-selected backends.
 
-const sceneCreator = viggle.createScene();
-const sceneStart = await startTask({
-  model: sceneCreator,
-  input: { sessionId: 'courtyard-01', prompt: 'A quiet courtyard at sunrise' },
-});
-const { result: sceneTask } = await waitForTask({ model: sceneCreator, task: sceneStart.task });
-console.log(sceneTask.result?.spz?.url);
-```
+Native outputs remain in `providerMetadata.viggle.output` or the task result, including alpha masks, batch images, and motion rig variants. Unsafe H3 integer seeds remain exact decimal strings; use a safe integer seed for numeric JavaScript handling.
 
-Each creation in these examples is an explicit provider operation when executed. Character
-and Motion creation return native reusable resources. Their exports are separate reads.
-Scene creation, new views and reconstruction keep their session and image-batch identities;
-the adapter does not silently compose them into one workflow. 3D splats and standalone motion
-are not presented as textured meshes or rigged-character animation.
+Resource methods expose `videos`, `images`, `renders`, `characters`, `motions`, `scenes`, and `credits`. Lists return one native page. `renders.events(id, { lastEventId })` opens one SSE stream; the host manages reconnection. `renders.download(id)` returns the signed redirect URL without following it. Fetch that URL without the API key.
 
-## Native contracts and runtime behavior
+Draft preparation, each upload, and draft submission are explicit steps. `renders.upload(plan, blob)` sends one signed PUT using only the plan's required headers, preserves the quoted ETag, and rejects redirects. Let Fetch set multipart boundaries. Output URLs normally last one hour; refresh them through result/export reads. Generated images expire after 24 hours.
 
-- Native parameter names and extra JSON fields are retained; `Blob` inputs use multipart.
-  `providerOptions.viggle` supplements input and rejects conflicting keys.
-- Factories follow Viggle's actual endpoint semantics. Only documented model-selector fields
-  accept model versions; the SDK does not maintain a model whitelist or invent model selectors
-  for endpoint-selected backends.
-- `characterAnimation()` requires a driving video. H3 frame/reference generation and video
-  remix have different inputs. Multi-character Animate prompts and mode-specific duration
-  limits are documented in the full guide.
-- Native outputs remain in `providerMetadata.viggle.output` or the task's native result.
-  Foreground and alpha files, batch images and all returned motion rigs are preserved.
-- Unsafe 63-bit H3 seeds are preserved as exact decimal strings. Provide a safe numeric seed
-  when ordinary JavaScript number handling is preferred.
-- Local abort stops local waiting. Viggle V1 does not publish client-triggered cancellation.
-  Character/Motion deletion is resource removal, and no per-submission webhook is invented.
-- `renders.events()` parses one SSE stream with optional `lastEventId`; reconnection belongs
-  to the host. `renders.download()` exposes the signed HTTP redirect without forwarding the
-  API key to the file host.
-- `renders.upload(plan, blob)` performs one signed PUT with only the upload plan's headers,
-  preserves the quoted ETag, and refuses redirects. Preparing, uploading and submitting a
-  draft remain explicit steps.
-- Output links are short-lived. Refresh them through the native result/export endpoint and
-  store required files explicitly; completed image files are retained by Viggle for 24 hours.
+## Save and resume stages
 
-The provider uses native Fetch, Blob, FormData and Web Streams. In Cloudflare Workers, pass
-the binding explicitly with `createViggleProvider({ apiKey: env.VIGGLE_API_KEY })`; schedule
-long-running work and persist receipts in the host's existing durable task system. The SDK
-does not add a Worker-specific polling or persistence engine.
+Use `startAsset` / `waitForAsset` or `startTask` / `waitForTask` for background work. Persist each full `operation` or `task` receipt and restore it on the same authorized connection, base URL, and capability. A persistence or download failure should not cause another paid submission. Receipts contain no API key.
 
-Full endpoint coverage, native parameters, examples, retention rules and protocol references:
-[VIGGLE.md](https://github.com/fei-bai-inc/sinestack-ai/blob/main/docs/VIGGLE.md).
+Generation, upscaling, reusable-resource creation, and scene stages are separate operations. Carry scene sessions and batch references forward explicitly. Ordinary submissions default to zero retries; draft and selected text/GLB Motion requests have specific idempotency contracts described in the guide. Local abort stops local work, not remote generation. Character/Motion deletion removes resources; Viggle publishes no client cancellation endpoint or submission webhook.
 
-The automated verification uses mocked HTTP, not live paid Viggle calls. Adding this package
-to the repository does not itself publish it to npm.
+## Connection and Workers
+
+`createViggleProvider` accepts `apiKey`, `baseURL`, `headers`, `fetch`, `name`, and `connectionId`. The default API root is `https://apis.viggle.ai/v1`; custom roots must include the intended API path. Per-call headers cannot replace the configured Bearer credential.
+
+In Cloudflare Workers, pass the account binding explicitly: `createViggleProvider({ apiKey: env.VIGGLE_API_KEY })`. Use the host's durable scheduler and receipt storage for long-running work. Four local checks are recorded for workerd `1.20261029.1` with mocked HTTP; they are not live Viggle or cloud deployment acceptance.
+
+## Guides
+
+- [Viggle: native inputs, recovery, security, and retention](https://github.com/fei-bai-inc/sinestack-ai/blob/main/docs/VIGGLE.md)
+- [Core: task lifecycle and file materialization](https://github.com/fei-bai-inc/sinestack-ai/blob/main/packages/core/README.md)
+- [workerd reproduction and recorded evidence](https://github.com/fei-bai-inc/sinestack-ai/blob/main/tests/workerd/README.md)

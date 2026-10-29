@@ -1,6 +1,7 @@
 import type { AssetModelMapping, AssetModelV1, AssetModelV1CallOptions, AssetModelV1OperationOptions, AssetModelV1Result, AssetModelV1Status, JSONObject, JSONValue, TaskCallOptions, TaskDeleteResult, TaskDriver, TaskOperationOptions, TaskStatus } from '@sinestack/ai-provider';
 import { jsonObject, snapshotAssetMapping } from '@sinestack/ai-provider-utils';
 import { MeshyClient, decodeResponse, meshyTaskId } from './client.js';
+import type { MeshyResponse } from './client.js';
 import { meshyAssetResult } from './results.js';
 import { validateRoute } from './routes.js';
 import { nonempty, validateMeshyInput } from './validation.js';
@@ -18,6 +19,16 @@ export interface MeshyTaskDefinition<R> {
 interface MeshyHandle extends JSONObject {
   type: 'meshy-task'; version: 1; taskId: string; baseURL: string; route: string;
   domain: string; variant?: string; modelId?: string; modelField: string; connectionId?: string;
+}
+export interface MeshyTaskStartResult {
+  handle: MeshyHandle;
+  response: MeshyResponse;
+  providerMetadata: { meshy: { taskId: string } };
+}
+export interface MeshyAssetStartResult {
+  operation: MeshyHandle;
+  response: MeshyResponse;
+  providerMetadata: { meshy: { taskId: string } };
 }
 
 /** One request per protocol method. No hidden preview/refine, waits or retry policy. */
@@ -58,7 +69,7 @@ export class MeshyTaskDriver<I, R, D extends string> implements TaskDriver<I, R,
     meshyTaskId(handle.taskId);
     return handle as MeshyHandle;
   }
-  async doStart(options: TaskCallOptions<I>) {
+  async doStart(options: TaskCallOptions<I>): Promise<MeshyTaskStartResult> {
     if (options.webhookUrl !== undefined) throw new TypeError('Meshy webhooks are configured at account level, not on submissions');
     const input = jsonObject(this.mapInput ? await this.mapInput(options.input) : options.input, 'Meshy input');
     const extra = jsonObject(options.providerOptions.meshy ?? {}, 'providerOptions.meshy');
@@ -119,7 +130,7 @@ export class MeshyAssetModel<I, K extends string> implements AssetModelV1<I, K> 
         return result;
       } }, kind, { mapInput: saved.mapInput });
   }
-  async doStart(options: AssetModelV1CallOptions<I>) {
+  async doStart(options: AssetModelV1CallOptions<I>): Promise<MeshyAssetStartResult> {
     const { handle, ...metadata } = await this.driver.doStart(options);
     return { ...metadata, operation: handle };
   }

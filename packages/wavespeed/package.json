@@ -1,6 +1,6 @@
 {
   "name": "@sinestack/ai-wavespeed",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "WaveSpeed prediction provider for SineStack AI asset generation",
   "type": "module",
   "license": "Apache-2.0",
@@ -8,6 +8,7 @@
   "files": [
     "dist",
     "src",
+    "README.zh-CN.md",
     "LICENSE",
     "NOTICE"
   ],

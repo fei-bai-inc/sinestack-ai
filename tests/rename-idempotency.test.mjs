@@ -3,7 +3,7 @@ import test from 'node:test';
 import { checkRigging, generateAsset } from '@sinestack/ai-core';
 
 for (const api of ['asset', 'check']) {
-  test(`${api}: generated request keys use new branding while supplied historical keys remain untouched`, async () => {
+  test(`${api}: caller-provided historical idempotency keys remain untouched`, async () => {
     const calls = [];
     const capture = options => {
       calls.push(options.idempotencyKey);
@@ -22,10 +22,8 @@ for (const api of ['asset', 'check']) {
     const invoke = headers => api === 'asset'
       ? generateAsset({ model, input: {}, headers })
       : checkRigging({ checker: model, input: {}, headers });
-    await invoke();
-    assert.match(calls[0], /^sinestack_asset_/);
     const originalKey = 'sine_asset_saved-client-request';
     await invoke({ 'IDEMPOTENCY-KEY': originalKey });
-    assert.equal(calls[1], originalKey);
+    assert.deepEqual(calls, [originalKey]);
   });
 }

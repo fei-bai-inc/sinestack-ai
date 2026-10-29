@@ -1,8 +1,22 @@
 # Tripo v3 and domain execution
 
+English | [简体中文](TRIPO.zh-CN.md)
+
 Implemented against the public HTTP v3 documentation and official Python SDK v1.0.0,
 reviewed 2026-10-29. Mock contract coverage is not a claim of successful paid integration.
 The package is `@sinestack/ai-tripo`; domain and task entry points come from `@sinestack/ai-core`.
+
+## Consumer setup
+
+```sh
+npm install @sinestack/ai-tripo @sinestack/ai-core ai@7.0.155
+```
+
+Use Node.js 22 or 24 and ESM. Set server-side `TRIPO_API_KEY` (or pass `apiKey`) and choose
+an available model version for your account. The default API root is `https://openapi.tripo3d.ai/v3`.
+Connection settings also accept `baseURL`, `headers`, `fetch`, `name` and `connectionId`.
+Submissions may incur charges; package installation and mocked tests do not grant provider access
+or credits. A runnable generation example is in the [package README](../packages/tripo/README.md).
 
 ## Coverage
 
@@ -66,8 +80,8 @@ storage and can explicitly use `materializeAsset` before temporary URLs expire.
 contracts are separate and compose this mechanism. `core/internal/runtime.ts` owns the only polling,
 submit/status and error lifecycle. The old `internal/executor.ts` is an Asset compatibility boundary.
 No fake AssetFile is used to run checks. Existing Asset receipts, results, errors, modes and hooks
-remain supported. Retry/backoff, signal composition and observation callback handling still delegate
-to the pinned AI SDK helpers; dependency versions and upstream hashes are unchanged.
+remain supported. Retry/backoff, signal composition and observation callback handling delegate
+to the pinned AI SDK helpers; see [UPSTREAM.md](UPSTREAM.md) for the maintained baseline.
 
 The public advanced APIs are startTask/getTaskStatus/waitForTask/cancelTask/deleteTask. `startTask`
 returns `{ task, ...metadata }`; `waitForTask` returns `{ result, execution }`, preserving the driver
@@ -77,16 +91,20 @@ The v1 wire discriminator `sine-ai-task` stays unchanged across the SineStack AI
 persisted receipts remain usable without data migration or new submissions.
 
 Submit defaults to zero retries; do not retry uncertain paid acceptance. Query retries only re-read
-the same task. Local abort/timeout never issues remote cancel or delete. Tripo has no verified remote
-cancel endpoint in this implementation, so it exposes no such driver method.
+the same task. Local abort/timeout never issues remote cancel or delete. This Tripo adapter exposes
+neither `doCancel` nor `doDelete`; the corresponding core lifecycle calls report unsupported.
 
 Polling is the implemented observation mechanism. An optional authenticated notification can be
 awaited before querying; a nonterminal query then continues polling. Notification loss can consume
 the configured waiting budget, so default polling is recommended when delivery is uncertain.
-There is no SSE/watch implementation, durable worker, database, queue or workflow scheduler in this
-SDK. Timeout is cooperative; it cannot force uncooperative provider promises/hooks to finish.
+The Tripo adapter has no SSE/watch implementation; Viggle's separate Render events stream does not change this.
+Durable workers, databases, queues and workflow scheduling belong to the application. Timeout is cooperative;
+it cannot force uncooperative provider promises/hooks to finish.
 
 ## Persistence and stages
+
+The following is an application integration sketch: `tripo`, versions, source task IDs and
+`saveTask` are supplied by the host. Import the lifecycle functions from `@sinestack/ai-core`.
 
 ```ts
 const model = tripo.rig(selectedRigVersion);
@@ -102,16 +120,17 @@ same authorized account, base URL, route, version and connection. Receipts conta
 not replace application tenant authorization. Cross-provider use requires explicit file transfer,
 not handing Tripo task IDs to Meshy.
 
-Meshy-style no-file results, mixed rig artifacts, multiple clips in one file and two-stage recovery
-are fixtures for the generic execution contract, NOT a shipped Meshy client or verified live Meshy
-integration. A future Meshy adapter implements the relevant domain interfaces; no provider branch
-is needed in the runtime.
+Meshy is implemented in `@sinestack/ai-meshy` using the same domain interfaces and shared runtime.
+Its no-file analysis, rig artifacts, multi-clip results and separate preview/refine stages are
+described in [MESHY.md](MESHY.md). Both generic runtime fixtures and Meshy's adapter fixtures are
+mock coverage, not proof of live account acceptance or binary asset correctness.
 
 ## Upload and webhook security
 
 Multipart uses the existing AI SDK transport helper. Signed storage PUT deliberately uses a separate
 uncredentialed fetch with redirects disabled; it never receives API keys or connection headers.
-Custom fetch must honor `redirect:'error'`.
+Custom fetch must honor `redirect:'error'` for this storage PUT. Tripo's pinned API transport also uses Fetch error mode;
+the current shared transport's manual-mode extension does not upgrade older exact dependency pins.
 
 Tripo subscriptions are configured at account level; do not send a fictitious callback URL with
 create-task requests. `verifyTripoWebhook` checks HMAC-SHA256 over timestamp plus ORIGINAL body bytes,
@@ -126,14 +145,17 @@ status; do not accept webhook output as authoritative generation output.
 
 ## Validation boundaries
 
-Local/CI contract tests use fake HTTP responses and no API keys. Still to validate with a real account:
-all version/parameter combinations, image-to-depth, alternate four-view and batch-animation output
+Local/CI contract tests use fake HTTP responses and no API keys. Still to validate for Tripo:
+real-account version/parameter combinations, image-to-depth, alternate four-view and batch-animation output
 shapes, Image-to-Image inputs-only behavior, Smart UV compression/version inconsistencies, binary
-model content/rig preservation, and Cloudflare/workerd deployment.
+model content/rig preservation, and Cloudflare/workerd deployment. The recorded
+[Viggle/core workerd checks](../tests/workerd/README.md) do not verify Tripo or its separate signed upload client.
 
-The Tripo package participates in the seven-package release manifest, version stamping, archive
-validation and external consumer smoke tests. See [PUBLISHING.md](PUBLISHING.md). Release verification
-and npm dry-run do not publish packages or migrate any consumer repository.
+Tripo and Meshy participate in the nine-package release manifest, archive validation and isolated
+consumer smoke tests. Packages are independently versioned; changes do not force a synchronized
+workspace version. `verify:release` ends with local archive validation, not an npm registry dry-run;
+only an explicit publish dry-run with `--base-ref` uses registry checks and selected-package npm
+dry-runs. Neither path publishes. See [PUBLISHING.md](PUBLISHING.md) for the exact boundaries.
 
 Sources: [Tripo SDK matrix](https://developers.tripo3d.ai/en/docs/sdk),
 [Task query](https://developers.tripo3d.ai/en/docs/task-query),

@@ -1,6 +1,6 @@
 {
   "name": "@sinestack/ai-meshy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Meshy generation, model processing, rigging, animation and printability provider for SineStack AI",
   "type": "module",
   "license": "Apache-2.0",
@@ -8,6 +8,7 @@
   "files": [
     "dist",
     "src",
+    "README.zh-CN.md",
     "LICENSE",
     "NOTICE"
   ],

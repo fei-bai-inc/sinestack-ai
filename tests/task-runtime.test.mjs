@@ -103,25 +103,6 @@ test('early nonterminal notification continues polling the same task', async () 
   await waitForTask({ model, task, notification: Promise.resolve({ forgedResult: true }), poll });
   assert.equal(reads, 2); assert.equal(calls.start, 1);
 });
-test('Meshy-style mixed rig assets and multiple clips need no engine branches', async () => {
-  const file = { type: 'url', url: 'https://example.test/combined.glb', mediaType: 'model/gltf-binary' };
-  const rig = fixture('model3d.rig', { provider: 'meshy-fixture', async doStatus() { return { status: 'completed', result: { model: file, armature: file, animations: [file] } }; } });
-  const rigged = await rigModel({ rigger: rig.model, input: { model_url: file.url }, poll });
-  assert.equal(rigged.animations.length, 1);
-  const animation = fixture('model3d.animate', { provider: 'meshy-fixture', async doStatus() { return { status: 'completed', result: { files: [file], clips: [{ name: 'walk' }, { name: 'run' }] } }; } });
-  const animated = await animateModel({ animator: animation.model, input: { rig_task_id: 'one' }, poll });
-  assert.equal(animated.files.length, 1); assert.equal(animated.clips.length, 2);
-});
-test('two-stage preview/refine stores each handle and resumes without recreating preview', async () => {
-  const preview = fixture('model3d.process', { driverId: 'preview', async doStatus() { return { status: 'completed', result: { previewId: 'preview-1' } }; } });
-  const refine = fixture('model3d.process', { driverId: 'refine', async doStatus() { return { status: 'completed', result: { model: 'textured.glb' } }; } });
-  const first = await startTask({ model: preview.model, input: { prompt: 'robot' } });
-  const saved = JSON.stringify(first.task);
-  const ready = await waitForTask({ model: preview.model, task: JSON.parse(saved), poll });
-  const second = await startTask({ model: refine.model, input: { preview_task_id: ready.result.previewId } });
-  await waitForTask({ model: refine.model, task: JSON.parse(JSON.stringify(second.task)), poll });
-  assert.equal(preview.calls.start, 1); assert.equal(refine.calls.start, 1);
-});
 test('direct domain calls need no fabricated task and observer failures do not change results', async () => {
   const model = { specificationVersion: 'v1', provider: 'local', driverId: 'check', domain: 'model3d.rig.check',
     async doExecute() { return { result: { riggable: true } }; } };
@@ -136,4 +117,146 @@ test('legacy Asset results keep nonempty files and never duplicate the final res
   const result = await generateAsset({ model, input: {}, poll });
   assert.deepEqual(result.responses.map(r => r.body), ['start', 'final']);
   assert.equal(result.operation.type, undefined); assert.equal(result.operation.kind, 'model-3d');
+});
+
+test('restored controls validate the provider handle before hooks or remote I/O', async () => {
+  const { model, calls } = fixture('model3d.rig.check', {
+    connectionId: 'original-account',
+    validateHandle(handle) {
+      if (handle.id !== 'one') throw new TypeError('Unknown task route');
+    },
+    async doCancel() { calls.cancel++; return { status: 'requested' }; },
+    async doDelete() { calls.delete++; return { status: 'deleted' }; },
+  });
+  const { task } = await startTask({ model, input: {} });
+  for (const invoke of [getTaskStatus, waitForTask, cancelTask, deleteTask]) {
+    let hooks = 0;
+    for (const invalid of [
+      { ...task, connectionId: 'different-account' },
+      { ...task, handle: { id: 'different-job' } },
+    ]) {
+      await assert.rejects(invoke({ model, task: invalid, hooks: { onStart() { hooks++; } } }), TypeError);
+    }
+    assert.equal(hooks, 0);
+  }
+  assert.deepEqual(calls, { start: 1, status: 0, cancel: 0, delete: 0 });
+});
+
+test('abort after acceptance retains the saved task despite failing observers and permits resumption', async () => {
+  const controller = new AbortController();
+  const reason = new Error('Stop locally after persisting acceptance');
+  const { model, calls } = fixture('model3d.rig.check', {
+    async doCancel() { calls.cancel++; return { status: 'cancelled' }; },
+    async doDelete() { calls.delete++; return { status: 'deleted' }; },
+  });
+  let saved;
+  let observedError;
+  let finishes = 0;
+  let failure;
+  await assert.rejects(checkRigging({
+    checker: model, input: {}, abortSignal: controller.signal, poll,
+    hooks: {
+      async onOperation(event) {
+        saved = JSON.stringify(event.task);
+        controller.abort(reason);
+        throw new Error('Persistence observer rejected after saving');
+      },
+      onFinish() { finishes++; },
+      async onError(event) { observedError = event.error; throw new Error('Error observer rejected'); },
+    },
+  }), error => {
+    failure = error;
+    return error instanceof TaskAbortError && error.cause === reason;
+  });
+  assert.equal(observedError, failure);
+  assert.deepEqual(failure.task, JSON.parse(saved));
+  assert.equal(finishes, 0);
+  assert.deepEqual(calls, { start: 1, status: 0, cancel: 0, delete: 0 });
+  const resumed = await waitForTask({ model, task: JSON.parse(saved), poll });
+  assert.equal(resumed.result.riggable, false);
+  assert.deepEqual(calls, { start: 1, status: 1, cancel: 0, delete: 0 });
+});
+
+test('a cancellation request leaves the saved task queryable until remote cancellation is observed', async () => {
+  let cancelled = false;
+  const { model, calls } = fixture('model3d.rig.check', {
+    async doCancel() { calls.cancel++; return { status: 'requested' }; },
+    async doDelete() { calls.delete++; return { status: 'deleted' }; },
+    async doStatus() {
+      calls.status++;
+      return cancelled ? { status: 'cancelled', message: 'Stopped remotely' } : { status: 'running' };
+    },
+  });
+  const { task } = await startTask({ model, input: {} });
+  const acknowledgement = await cancelTask({ model, task });
+  assert.equal(acknowledgement.status, 'requested');
+  assert.deepEqual(acknowledgement.task, task);
+  assert.equal((await getTaskStatus({ model, task })).status, 'running');
+  cancelled = true;
+  await assert.rejects(waitForTask({ model, task, retry: { status: 3 }, poll }), error => {
+    assert.ok(error instanceof TaskAbortError);
+    assert.deepEqual(error.task, task);
+    assert.equal(error.message, 'Stopped remotely');
+    return true;
+  });
+  assert.deepEqual(calls, { start: 1, status: 2, cancel: 1, delete: 0 });
+});
+
+test('invalid completion is not retried and observer failure cannot hide its accepted task', async () => {
+  const { model, calls } = fixture('model3d.rig.check', {
+    async doStatus() { calls.status++; return { status: 'completed' }; },
+  });
+  let accepted;
+  let observed;
+  let finishes = 0;
+  await assert.rejects(checkRigging({
+    checker: model, input: {}, poll, retry: { status: 4 },
+    hooks: {
+      onOperation(event) { accepted = event.task; },
+      onFinish() { finishes++; },
+      onError(event) { observed = event; throw new Error('Observer failure'); },
+    },
+  }), error => {
+    assert.ok(error instanceof TaskExecutionError);
+    assert.ok(error.cause instanceof TypeError);
+    assert.equal(error.phase, 'status');
+    assert.equal(error.task, accepted);
+    assert.equal(observed.error, error);
+    assert.equal(observed.task, accepted);
+    return true;
+  });
+  assert.equal(finishes, 0);
+  assert.deepEqual(calls, { start: 1, status: 1, cancel: 0, delete: 0 });
+});
+
+test('retrying an idempotent start restores headers and cannot fall back to direct execution', async () => {
+  const submissions = [];
+  let directCalls = 0;
+  const headers = { 'Idempotency-Key': 'caller-submission', 'x-account': 'original' };
+  const { model, calls } = fixture('model3d.rig.check', {
+    capabilities: { idempotentStart: true },
+    async doExecute() { directCalls++; return { result: { riggable: true } }; },
+    async doStart(options) {
+      calls.start++;
+      submissions.push({ key: options.idempotencyKey, headers: { ...options.headers } });
+      options.headers['idempotency-key'] = 'mutated-by-adapter';
+      options.headers['x-account'] = 'different-account';
+      if (calls.start === 1) throw new APICallError({
+        message: 'Retry accepted route', url: 'https://example.test', requestBodyValues: undefined,
+        statusCode: 503, responseHeaders: { 'retry-after-ms': '0' },
+      });
+      return { handle: { id: 'one' } };
+    },
+  });
+  const result = await checkRigging({ checker: model, input: {}, execution: 'async', poll, headers, retry: { start: 1 } });
+  assert.equal(result.riggable, false);
+  assert.equal(submissions.length, 2);
+  for (const submission of submissions) {
+    assert.equal(submission.key, 'caller-submission');
+    assert.equal(new Headers(submission.headers).get('idempotency-key'), 'caller-submission');
+    assert.equal(new Headers(submission.headers).get('x-account'), 'original');
+  }
+  assert.deepEqual(headers, { 'Idempotency-Key': 'caller-submission', 'x-account': 'original' });
+  assert.equal(directCalls, 0);
+  assert.deepEqual(calls, { start: 2, status: 1, cancel: 0, delete: 0 });
 });

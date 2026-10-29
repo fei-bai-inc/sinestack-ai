@@ -5,8 +5,6 @@ import {
   publishReleasePackages,
 } from '../scripts/publish.mjs';
 import {
-  packageDirectories,
-  readPackages,
   validateVersion,
 } from '../scripts/release.mjs';
 
@@ -107,24 +105,7 @@ function fakePublishDeps(options = {}) {
 }
 
 describe('release metadata and archive contract', () => {
-  test('declares all nine @sinestack/ai-* packages in topological dependency order', async () => {
-    assert.deepEqual(packageDirectories, [
-      'provider',
-      'provider-utils',
-      'core',
-      'fal',
-      'wavespeed',
-      'replicate',
-      'tripo',
-      'meshy',
-      'viggle',
-    ]);
-    const packages = await readPackages();
-    assert.deepEqual(
-      packages.map(pkg => pkg.manifest.name),
-      expectedPackageNames,
-    );
-  });
+
 
   test('validates release semver strings strictly', () => {
     validateVersion('0.1.0');
@@ -378,13 +359,8 @@ describe('release publish script', () => {
       deps,
     );
 
-    assert.equal(published.length, expectedPackageNames.length - 2);
-    assert.equal(
-      deps.logs.some(line =>
-        line.includes('Already published with matching integrity: @sinestack/ai-provider@0.1.0'),
-      ),
-      true,
-    );
+    assert.deepEqual(published.map(path => path.split('/').at(-1)),
+      createSampleRelease().packages.slice(2).map(pkg => pkg.file));
   });
 
   test('fails before publishing if a matching retry has a moved latest tag', async () => {

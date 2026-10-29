@@ -201,3 +201,53 @@ test('injected mapping methods retain their original receiver and snapshot metho
   assert.deepEqual(await mapping.mapInput({ description: 'Song' }), { text: 'external:Song' });
   assert.equal((await mapping.mapResult('https://assets.example/song.wav')).assets[0].role, 'external:');
 });
+
+test('empty control acknowledgements are opt-in and never excuse malformed or empty generation responses', async () => {
+  const responses = [
+    new Response(' \n', { status: 200, headers: { 'x-request-id': 'deleted-job' } }),
+    new Response(null, { status: 204 }),
+    new Response('', { status: 200 }),
+    new Response('{', { status: 200 }),
+  ];
+  const requests = [];
+  const transport = new AssetProviderTransport(settings(async (_url, init) => {
+    requests.push(init.method);
+    const response = responses.shift();
+    assert.ok(response, 'transport must not retry');
+    return response;
+  }));
+  const deleted = await transport.request(`${transport.baseURL}/jobs/id`, 'DELETE', options(), undefined, true);
+  assert.equal(deleted.value, undefined);
+  assert.equal(deleted.response.headers['x-request-id'], 'deleted-job');
+  for (const [method, body, allowEmpty] of [['POST', {}, false], ['POST', {}, false], ['DELETE', undefined, true]]) {
+    await assert.rejects(transport.request(`${transport.baseURL}/jobs`, method, options(), body, allowEmpty), error => {
+      assert.ok(APICallError.isInstance(error));
+      assert.equal(error.isRetryable, false);
+      return true;
+    });
+  }
+  assert.deepEqual(requests, ['DELETE', 'POST', 'POST', 'DELETE']);
+  assert.equal(responses.length, 0);
+});
+
+test('invalid submission bodies fail before transport dispatch without executing serializers', async () => {
+  let requests = 0;
+  let serializers = 0;
+  const transport = new AssetProviderTransport(settings(async () => {
+    requests++;
+    return Response.json({ id: 'should-not-be-created' });
+  }));
+  const cyclic = {};
+  cyclic.self = cyclic;
+  for (const body of [
+    { get prompt() { serializers++; return 'paid request'; } },
+    { toJSON() { serializers++; return { prompt: 'paid request' }; } },
+    { count: Infinity },
+    cyclic,
+  ]) {
+    await assert.rejects(transport.request(`${transport.baseURL}/jobs`, 'POST', options(), body), TypeError);
+  }
+  await assert.rejects(transport.request(`${transport.baseURL}/jobs/id`, 'DELETE', options(), {}), TypeError);
+  assert.equal(serializers, 0);
+  assert.equal(requests, 0);
+});

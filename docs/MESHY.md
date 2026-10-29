@@ -1,8 +1,22 @@
 # Meshy provider
 
+English | [简体中文](MESHY.zh-CN.md)
+
 `@sinestack/ai-meshy` implements Meshy's public generation, processing, analysis, rigging,
 animation and account APIs through the existing SineStack AI runtime. Protocol references
 were reviewed on 2026-10-29. Contract tests use mocked HTTP; they are not live API acceptance.
+
+## Consumer setup
+
+```sh
+npm install @sinestack/ai-meshy @sinestack/ai-core ai@7.0.155
+```
+
+Use Node.js 22 or 24 and ESM. Set server-side `MESHY_API_KEY` (or pass `apiKey`) and choose
+an available model/mode for the capability. Account permissions and credits are required;
+each submitted stage may be billed separately. Connection settings include `baseURL`, `headers`,
+`fetch`, `name` and `connectionId`; custom fetch must honor redirect rejection. The
+[package README](../packages/meshy/README.md) includes a runnable generation/processing example.
 
 ## Capability and API coverage
 
@@ -116,16 +130,21 @@ Text generation is preview then optional refine; the provider does not hide both
 Each POST has its own returned receipt and billing boundary. Example functions are in
 [examples/meshy.ts](../examples/meshy.ts); importing the example does not start work.
 
+This persistence sketch assumes application-owned `meshy`, `chosenModelId`, `prompt`,
+`savePreview` and `saveRefine`; import the lifecycle functions from `@sinestack/ai-core`.
+
 ```ts
 const previewModel = meshy.textTo3D(chosenModelId);
 const started = await startAsset({ model: previewModel, input: { prompt } });
 await savePreview(started.operation);
 const preview = await waitForAsset({ model: previewModel, operation: started.operation });
 
+const previewTaskId = preview.providerMetadata?.meshy?.taskId;
+if (typeof previewTaskId !== 'string') throw new Error('Missing preview task ID');
 const processor = meshy.refine();
 const next = await startTask({
   model: processor,
-  input: { preview_task_id: preview.providerMetadata.meshy.taskId },
+  input: { preview_task_id: previewTaskId },
 });
 await saveRefine(next.task);
 const refined = await waitForTask({ model: processor, task: next.task });
@@ -136,11 +155,12 @@ receipt and retry storage, not POST. The model that restores a task must have th
 route, stage, domain and algorithm selection. Receipts carry neither API keys nor account authorization.
 Cross-provider transfers require explicit files, not passing a Tripo task ID to Meshy.
 
-MeshyTaskDriver performs one POST/GET/DELETE. The existing core owns submission/wait/status retry/signals/hooks;
-its runtime and TaskHandle wire format are unchanged. Model3DAnalyzer and analyzeModel3D are just a separate
-semantic facade over that runtime. Shared HTTP transport adds DELETE and optional empty HTTP 200 handling,
-without making malformed/empty generation responses acceptable. Submission defaults to zero retries;
-query retries read the same task. No verified remote idempotency guarantee is advertised.
+MeshyTaskDriver performs one POST/GET/DELETE. The shared core owns submission/wait/status
+retry/signals/hooks. Model3DAnalyzer and analyzeModel3D provide separate analysis semantics over
+that runtime. The TaskHandle v1 wire discriminator remains `sine-ai-task`, including across package
+renames. Shared HTTP transport supports DELETE and opt-in empty HTTP 200/204 responses without
+making malformed/empty generation responses acceptable. Submission defaults to zero retries;
+query retries read the same task. No remote submission idempotency guarantee is advertised.
 
 ## Delete, cancellation and notifications
 
@@ -157,7 +177,7 @@ Resolve connections and allowed task families from trusted server routing/storag
 notifications at the host boundary, rate-limit them, and use them only to wake an already registered task's
 authoritative GET. Never derive credentialed fetch destinations or accept output files from an untrusted
 notification. Duplicate and out-of-order events must not regress stored task state. Default polling remains
-available without callbacks. SSE/watch has not been implemented by this change.
+available without callbacks. Meshy SSE/watch is not implemented; Viggle's separate `renders.events` API does not change this boundary.
 
 ## Important native behavior and unresolved documentation differences
 
@@ -171,18 +191,19 @@ available without callbacks. SSE/watch has not been implemented by this change.
 
 ## Scope and verification
 
-The main core APIs above are implemented; this is not a claim to wrap every Meshy API product. Creative Lab's
-specialized product workflows (which have different cancellation semantics), SSE streaming, durable workers,
-queues and automatic workflow composition are outside this change.
+The main core APIs above are implemented; this is not a claim to wrap every Meshy API product. Meshy Creative Lab's
+specialized product workflows (which have different cancellation semantics) and Meshy SSE streaming are not implemented.
+Durable workers, queues and automatic workflow composition remain application responsibilities.
 
 Node 22/24 CI exercises old-provider regressions, all 18 Meshy business capabilities, native request bodies,
 results, invalid inputs, type inference, delete/cancel separation, credential routing, restore/no-resubmission,
-notifications and account resources. Release verification includes all eight tarballs in an independent consumer.
-No new dependencies, upstream hashes, permanent CI jobs or publish permissions are added.
+notifications and account resources. Release verification includes all nine tarballs in an independent consumer.
+Mock coverage and local release verification are distinct from a successful provider integration.
 
-Not yet verified: live account entitlements/credits, every version/parameter combination, actual Meshy webhook
-delivery/authentication, binary model/UV/rig/animation contents and Cloudflare/workerd execution. No paid API call,
-npm publish or gateway/cloud migration is performed by these tests.
+Not yet verified for Meshy: live account entitlements/credits, every version/parameter combination, actual webhook
+delivery/authentication, binary model/UV/rig/animation contents and Cloudflare/workerd execution. The recorded
+[Viggle/core workerd checks](../tests/workerd/README.md) do not establish Meshy compatibility; its exact transport dependency
+still uses Fetch's `redirect: 'error'`. These tests perform no paid API call, npm publish or gateway/cloud migration.
 
 ## Protocol references
 
@@ -200,14 +221,15 @@ npm publish or gateway/cloud migration is performed by these tests.
 
 ## Independent package release
 
-This provider starts at `@sinestack/ai-meshy@0.1.0` and pins `@sinestack/ai-provider@0.1.2`
-(the additive analyzer contract) and `@sinestack/ai-provider-utils@0.1.2` (DELETE/empty-response support).
-The compatible core analyzer facade is released in `@sinestack/ai-core@0.1.2`. Under the repository
-0.x rules these additive changes use patch increments, not a shared workspace version bump.
-Tripo also receives a compatible `0.1.2` patch for portable public declarations when older
-exact dependencies are installed; its provider/provider-utils pins remain at `0.1.1`.
-fal, WaveSpeed and Replicate keep both their existing versions and dependency pins.
+Meshy is one of nine independently versioned packages registered in release order and isolated
+consumer validation. Dependency pins are per-package compatibility choices, not a requirement that
+all workspace versions match. Consult the package manifests for current versions; the initial
+Meshy release numbers are not installation requirements for later releases.
 
-The new package is explicitly registered in release order, version-policy tests and isolated consumer
-validation. First publication also needs npm-side bootstrap/Trusted Publisher setup; source changes
-do not perform it. See [PUBLISHING.md](PUBLISHING.md) for the merge and automatic release rules.
+Public request/start/delete results have named contracts (`MeshyTaskResponse`, `MeshyTaskStartResult`,
+`MeshyAssetStartResult`, `MeshyTaskDeletion`) and retain required response headers and native task IDs.
+Their declarations reference Meshy's declared protocol dependency rather than a transport's nested
+dependency path. The isolated consumer checks these APIs with independent package versions.
+
+First publication also needs npm-side bootstrap/Trusted Publisher setup; source changes and dry-runs
+do not perform it. See [PUBLISHING.md](PUBLISHING.md) for versioning, merge and release rules.

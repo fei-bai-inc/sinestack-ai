@@ -51,10 +51,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      # Publication dry-runs require an unpublished candidate version. A normal
-      # source/PR check must not fail just because its version is already on npm.
-      # The explicit release workflow retains full verify:release validation.
-      - name: Typecheck, build, test, pack, and consumer smoke check
+      # No-base release verification checks local archives; only the PR step below queries npm.
+      - name: Check docs, types, behavior, examples, and isolated package consumers
         run: npm run verify:release
       - name: Dry-run changed packages
         if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && matrix.node == 24 }}

@@ -1,9 +1,26 @@
 import { jsonObject } from '@sinestack/ai-provider-utils';
 import { MeshyClient, decodeResponse, meshyTaskId, parseMeshyTask } from './client.js';
+import type { MeshyDeleteResult } from './client.js';
 import { familyRoute } from './routes.js';
 import type { MeshyTaskFamily } from './routes.js';
-import type { MeshyAnimationFilters, MeshyAnimationPreset, MeshyBalance, MeshyListOptions, MeshyRequestOptions, MeshyUsageQuery, MeshyUsageRecord } from './types.js';
+import type { MeshyAnimationFilters, MeshyAnimationPreset, MeshyBalance, MeshyListOptions, MeshyRequestOptions, MeshyTaskRecord, MeshyUsageQuery, MeshyUsageRecord } from './types.js';
 import { boundedNumber, nonempty } from './validation.js';
+
+export interface MeshyTaskDeletion extends MeshyDeleteResult { taskId: string }
+export interface MeshyResources {
+  tasks: {
+    get(family: MeshyTaskFamily, id: string, options?: MeshyRequestOptions): Promise<MeshyTaskRecord>;
+    list(family: MeshyTaskFamily, query?: MeshyListOptions, options?: MeshyRequestOptions): Promise<MeshyTaskRecord[]>;
+    delete(family: MeshyTaskFamily, id: string, options?: MeshyRequestOptions): Promise<MeshyTaskDeletion>;
+  };
+  animations: {
+    list(query?: MeshyAnimationFilters, options?: MeshyRequestOptions): Promise<readonly MeshyAnimationPreset[]>;
+  };
+  account: {
+    balance(options?: MeshyRequestOptions): Promise<MeshyBalance>;
+    usage(query?: MeshyUsageQuery, options?: MeshyRequestOptions): Promise<readonly MeshyUsageRecord[]>;
+  };
+}
 
 function queryString(query: object): string {
   const params = new URLSearchParams();
@@ -25,7 +42,7 @@ function array(value: unknown): unknown[] {
   return value;
 }
 /** Resource queries never create artificial jobs or automatically drain every page. */
-export function meshyResources(client: MeshyClient) {
+export function meshyResources(client: MeshyClient): MeshyResources {
   return {
     tasks: {
       async get(family: MeshyTaskFamily, id: string, options?: MeshyRequestOptions) {

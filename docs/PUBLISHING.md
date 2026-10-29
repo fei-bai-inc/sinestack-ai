@@ -1,5 +1,7 @@
 # Publishing `@sinestack/ai-*`
 
+English | [简体中文](PUBLISHING.zh-CN.md)
+
 The nine packages have **independent versions**. Only changed packages are published, in dependency order: `@sinestack/ai-provider`, `@sinestack/ai-provider-utils`, `@sinestack/ai-core`, `@sinestack/ai-fal`, `@sinestack/ai-wavespeed`, `@sinestack/ai-replicate`, `@sinestack/ai-tripo`, `@sinestack/ai-meshy`, and `@sinestack/ai-viggle`. An unchanged package keeps its own version and its existing exact dependency pins, even when a newer dependency exists.
 
 ## Pull request and version rules
@@ -14,12 +16,12 @@ The nine packages have **independent versions**. Only changed packages are publi
    npm run version:release -- fal 0.1.1
    ```
 
-   The command updates only that package and its workspace lockfile entry. Existing internal dependency pins are **not** automatically updated: an unchanged dependent can keep using the older published version. If a dependent needs the new dependency, update its exact pin, then bump that dependent because its manifest changed. Repeat only for dependents that need updating. After all bumps and pin edits, run `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` and commit `package-lock.json`: npm needs nested lock entries for old pins when the workspace version has advanced. The `core` bump also updates its user-agent and integration assertion. The root workspace version is independent.
+   The command updates only that package and its workspace lockfile entry. Existing internal dependency pins are **not** automatically updated: an unchanged dependent can keep using the older published version. If a dependent needs the new dependency, update its exact pin, then bump that dependent because its manifest changed. Repeat only for dependents that need updating. After all bumps and pin edits, run `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` and commit `package-lock.json`: npm needs nested lock entries for old pins when the workspace version has advanced. The `core` bump also updates its runtime user-agent; versioning does not rewrite tests. The root workspace version is independent.
 
 4. After another PR merges, update the branch and repeat the check; each changed package's proposed version must still be newer than its own version on `main`. Commit all changed manifests, lockfile and source/test files; a version stamped only in CI is not accepted.
 5. After merging, monitor **Publish npm packages**. No package changes means a successful no-op, not a release. A merge starts the workflow but does not guarantee npm publishing succeeded.
 
-The active `protect main` ruleset requires PRs and all three checks from GitHub Actions, with strict up-to-date status, resolved conversations, no bypass actors, and squash merge. It blocks deletion and force pushes. Only one collaborator was available when this was configured, so approval is a team practice rather than an enforced review count; enable at least one approval when another reviewer is available. `Release version` is already required during bootstrap: existing PRs must merge or rebase the bootstrap commit. A PR targeting a different branch fails this check intentionally so an earlier check cannot satisfy the `main` gate.
+Repository checks are defined in [ci.yml](../.github/workflows/ci.yml); branch protection and approval settings are GitHub configuration, not enforced by checked-in files. Maintainers should require `Release version`, `Node 22`, `Node 24`, up-to-date branches, resolved conversations and squash merges, and block direct/force pushes and branch deletion. Require a reviewer when another maintainer is available. A PR targeting a branch other than `main` intentionally fails the release-version check so it cannot satisfy the `main` gate. Ordinary contributor checks use no publishing secrets or OIDC write permission.
 
 ## Automatic npm release
 
@@ -45,4 +47,14 @@ npm run check:release-version -- origin/main
 npm run verify:release
 ```
 
-The first check compares the current tree with fetched `origin/main`. `verify:release` builds and typechecks, runs tests and upstream checks, packs all nine workspaces, installs them into an isolated consumer and executes that consumer, including Tripo, Meshy, and Viggle. It does not publish. To dry-run unpublished changed packages, use `npm run release:dry-run -- --base-ref origin/main` after `verify:release`; it queries npm and may require authentication for private packages. Actual publish uses the committed `main` tree and OIDC.
+The version check compares the current working tree (including untracked files) with fetched `origin/main`. Run `git fetch origin main` first when that ref is missing or stale. Package README changes count as package changes; root docs, tests and workflow-only changes do not require package bumps unless they change the shared compiler inputs described above.
+
+| Command | Scope | Network / mutation |
+| --- | --- | --- |
+| `npm run check` | Build, public/example types, behavioral tests, local Markdown links/fences, and the no-key local example | No provider calls; build output only |
+| `npm run check:upstream` | Installed dependency versions and registered source hashes | Offline; does not update the baseline |
+| `npm run verify:release` | All checks, nine package tarballs, isolated consumer types/runtime/local example, then archive metadata/integrity validation | Consumer installation accesses npm; writes local build artifacts; never publishes |
+| `npm run release:dry-run` | Validate existing local archives without a base ref | No registry calls and no `npm publish` invocation |
+| `npm run release:dry-run -- --base-ref origin/main` | Select changed packages, compare registry integrity, and run `npm publish --dry-run` for unpublished selected versions | Reads npm; no registry writes; private packages may need read authentication |
+
+Actual publishing is reserved for the committed `main` workflow and OIDC. Passing local verification does not prove registry permissions, remote API entitlements, binary asset quality, or hosting-runtime compatibility. See [contributor requirements](../CONTRIBUTING.md) and each provider's validation boundaries.

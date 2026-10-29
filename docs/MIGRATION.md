@@ -1,71 +1,87 @@
-# 未发布初版的 API 收缩
+# Historical Migration: API Reductions in the Unreleased Initial Version
 
-这次调整以减少基础执行逻辑的长期维护为目标。项目尚未发布到 npm；已经按早期源码接入的调用方需要检查下列变化。
+English | [简体中文](MIGRATION.zh-CN.md)
 
-基础机制现在集中通过 `internal/sdk.ts` 使用 AI SDK 的 `prepareRetries`、`mergeAbortSignals`、`mergeCallbacks`。core 的 `ai` peer dependency 精确锁定 `7.0.155`。资产 submit/status/poll/result/cancel 编排仍由 SineStack AI 维护，不是上游新增了通用 Asset executor。
+This document records the API reductions during the early source-code stage and the subsequent Media provider expansion, for callers migrating from those interfaces. “Unreleased” describes that stage, not the current npm publication status; this document is not a new verification record. For current installation and API usage, refer to the [README](../README.md), [architecture](ARCHITECTURE.md), [Tripo](TRIPO.md), [Meshy](MESHY.md), and [Viggle](VIGGLE.md). See [PUBLISHING.md](PUBLISHING.md) for versions and the release process.
 
-## 删除或改变的部分
+This historical adjustment centralized basic mechanisms in `internal/sdk.ts`, reusing the AI SDK's `prepareRetries`, `mergeAbortSignals`, and `mergeCallbacks`. See [UPSTREAM.md](UPSTREAM.md) for the current exact upstream baseline. SineStack AI still maintains asset orchestration and the domain task orchestration added later; upstream did not add a generic Asset executor.
 
-| 早期接口或行为 | 当前行为 |
+## Removed or Changed Features
+
+| Early interface or behavior | Behavior after the reduction |
 |---|---|
-| `retry.initialDelayMs`、`retry.maxDelayMs` | 删除。退避和 Retry-After 采用 SDK 策略；保留各阶段 retry 次数。 |
-| `hooks.onAttempt`、`hooks.onRetry` | 删除，不再提供单独的资产 retry callback 协议。 |
-| `hooks.onAbort` | 删除。调用因 abort/timeout 退出时通过 `onError` 观测。 |
-| `AssetHookError`、hook 错误向调用者传播 | 删除。SDK `mergeCallbacks` 会 await 并忽略 hook 错误。 |
-| `onFinish` 失败后通过错误的 `result` 恢复 | 不再需要该路径：hook 抛错被忽略，调用返回原生成结果。 |
-| `onOperation` 抛错阻断后续流程 | 不再成立。它只作观测，不能作为必须成功的持久化步骤。 |
-| 对 provider/hook 的通用 Promise 竞争、严格墙钟 deadline | 删除。取消采用合作式 signal，不保证任意忽略 signal 的 Promise 按时结束。 |
-| 自定义 `abort.ts`、WeakMap deadline 与终态状态机 | 删除，使用 SDK helper；只保留 webhook 通知等待所需的局部竞争。 |
+| `retry.initialDelayMs`, `retry.maxDelayMs` | Removed. Backoff and Retry-After follow SDK policies; per-stage retry counts remain. |
+| `hooks.onAttempt`, `hooks.onRetry` | Removed; there is no longer a separate asset retry callback protocol. |
+| `hooks.onAbort` | Removed. Observe abort/timeout exits through `onError`. |
+| `AssetHookError`, propagation of hook errors to callers | Removed. SDK `mergeCallbacks` awaits hooks and ignores their errors. |
+| Recovery through an error's `result` after `onFinish` fails | No longer needed: thrown hook errors are ignored, and the call returns the original generation result. |
+| An `onOperation` exception blocking subsequent execution | No longer applies. It is observation-only and cannot serve as a persistence step that must succeed. |
+| Generic Promise races for providers/hooks and strict wall-clock deadlines | Removed. Cancellation uses cooperative signals and does not guarantee timely termination of arbitrary Promises that ignore signals. |
+| Custom `abort.ts`, WeakMap deadlines, and terminal state machine | Removed in favor of SDK helpers; only the local race required for webhook notification waiting remains. |
 
-这些是有意减少的行为承诺。一个挂住的 hook 仍会阻塞调用；provider、custom downloader 和自定义 sleep 需要自己响应 signal。不要把 `timeoutMs` 当成强制终止任意用户代码的上限。
+These are deliberate reductions in behavioral guarantees. A hanging hook still blocks the call; providers, custom downloaders, and custom sleep implementations must respond to signals themselves. Do not treat `timeoutMs` as an upper bound that forcibly terminates arbitrary user code.
 
-## 把关键步骤移出 hooks
+## Move Critical Steps out of Hooks
 
-五个现有 hooks 是 `onStart`、`onOperation`、`onProgress`、`onFinish`、`onError`，适用于日志、指标和非关键进度展示。
+The five existing hooks are `onStart`, `onOperation`, `onProgress`, `onFinish`, and `onError`. They are suitable for logging, metrics, and noncritical progress displays.
 
-保存任务时，先取得 handle，再显式等待应用自己的持久化函数：
+To save a task, first obtain its handle, then explicitly await the application's persistence function:
 
 ```ts
-// model、input 和 saveOperation 由应用提供；saveOperation 是数据库写入。
+// The application provides model, input, and saveOperation; saveOperation writes to a database.
 const started = await startAsset({ model, input });
 await saveOperation(started.operation);
 ```
 
-保存失败时，`started.operation` 仍是已创建任务的 handle，应补写或用它恢复；不要因持久化失败再次提交。鉴权和其他必须成功的业务步骤同样放在观测 hooks 之外。
+If saving fails, `started.operation` is still the handle of the already-created task. Retry saving it or use it to resume; do not resubmit because persistence failed. Authorization and other business steps that must succeed likewise belong outside observation hooks.
 
-## 保留的资产约束
+## Retained Asset Constraints
 
-stage retry 次数、提交幂等能力检查、每次逻辑提交的稳定幂等键、JSON operation 校验与身份绑定、查询失败不重提、URL 默认不下载和显式远端取消保持不变。自定义能力继续使用 `AssetModelV1`，无需为每种资产另写 polling/retry。
+Per-stage retry counts, submission idempotency capability checks, a stable idempotency key per logical submission, JSON operation validation and identity binding, no resubmission on query failures, no URL downloads by default, and explicit remote cancellation remain unchanged. Custom capabilities continue to use `AssetModelV1`, without requiring separate polling/retry implementations for each asset type.
 
-接入更新后运行 `npm run check` 和 `npm run check:upstream`；其他版本的 AI SDK 需要先经过集中 internal 接口和基线审阅。
+After migrating repository source, run `npm run check` and `npm run check:upstream`; npm consumers should run their own type and behavior tests rather than assume dependency packages ship workspace scripts. Other AI SDK versions require prior review of the centralized internal interfaces and baseline.
 
-## Media provider 扩展后的变化
+## Changes after the Media Provider Expansion
 
-新增 `@sinestack/ai-wavespeed`、`@sinestack/ai-replicate` 的通用资产协议，fal 同样采用通用模型入口；`AssetModelV1` 版本保持不变。四个能力 facade 都支持 `{ model, input }`，只校验 kind 并调用 `generateAsset`。连接和映射约定见 [MEDIA_PROVIDERS.md](MEDIA_PROVIDERS.md)。
+Generic asset protocols were added for `@sinestack/ai-wavespeed` and `@sinestack/ai-replicate`, and fal likewise adopted generic model entry points; the `AssetModelV1` version stayed unchanged. All four capability facades support `{ model, input }`, only validate kind, and call `generateAsset`. See [MEDIA_PROVIDERS.md](MEDIA_PROVIDERS.md) for connection and mapping contracts.
 
-fal HTTP 已转向共享 `@sinestack/ai-provider-utils`，与新 provider 一起复用 AI SDK 的公开 HTTP helpers。由此产生以下明确变化：
+fal HTTP moved to shared `@sinestack/ai-provider-utils`, reusing public AI SDK HTTP helpers alongside the new providers. This introduced the following explicit changes:
 
-- HTTP 409 按 SDK 的默认分类可重试。是否重试仍由 core 的阶段 retry 次数决定，提交默认依然为 0。
-- 未被 SDK 识别的自定义 fetch 异常保留原样，不再全部包装成可重试网络错误。SDK 识别的连接错误继续使用 SDK 的分类。
-- fal PUT 取消使用一次 fetch 加 SDK response handlers；网络异常原样保留，默认 cancel retry 为 0。
-- `mapInput` 和 `mapResult` 改为独立可选：默认原生 JSON 输入和共享文件解析。提供时会在构造阶段校验函数类型。完成结果仍需含至少一个资产。
-- 所有 adapter 完成结果新增 `providerMetadata.<provider>.output`，保留原生输出快照；该字段和真实任务 ID 由 adapter 保留，不接受自定义 mapper 覆盖。对整个 metadata 做精确快照比较的调用方需要更新预期。
+- HTTP 409 is retryable under the SDK's default classification. Whether a retry occurs still depends on core's per-stage retry counts; submission still defaults to 0.
+- Custom fetch exceptions not recognized by the SDK are preserved as-is rather than all being wrapped as retryable network errors. Connection errors recognized by the SDK continue to use its classification.
+- fal PUT cancellation uses one fetch with SDK response handlers; network exceptions are preserved as-is, and cancel retries default to 0.
+- `mapInput` and `mapResult` became independently optional: native JSON input and shared file parsing are the defaults. When supplied, their function types are validated during construction. Completed results must still contain at least one asset.
+- Completed results from these three Media adapters gained `providerMetadata.<provider>.output`, preserving a native output snapshot. This field and the real task ID are reserved by the adapter and cannot be overridden by custom mappers. Callers performing exact snapshot comparisons of the entire metadata object need to update their expectations.
 
-此前已持久化的 fal queue operation 结构没有变化，仍可用原连接恢复。新增 provider 的 operation 不可相互替换，也不可在不同 baseURL 下恢复。
+Previously persisted fal queue operation structures are unchanged and can still be resumed using the original connection. Operations from the new providers are not interchangeable and cannot be resumed under a different baseURL.
 
-## 移除默认模型与模型预设
+## Removal of Default Models and Model Presets
 
-此前未发布实现把特定模型的 schema 放进能力入口，限制了接入同平台其他模型。本次移除公共 provider 源码里的模型常量、默认 ID、精确型号校验、参数白名单和型号专有映射。三个 provider 都提供 `music / threeD / soundEffect / animation3D(modelId, mapping?)`；通用 `.asset(modelId, { kind })` 不再要求 identity mapper。
+The earlier unreleased implementation embedded specific model schemas in capability entry points, restricting access to other models on the same platform. This change removed model constants, default IDs, exact-model validation, parameter allowlists, and model-specific mappings from public provider source. All three providers offer `music / threeD / soundEffect / animation3D(modelId, mapping?)`; the generic `.asset(modelId, { kind })` no longer requires an identity mapper.
 
-| 旧用法 | 新用法 |
+| Old usage | New usage |
 |---|---|
-| `fal.music()`、`wavespeed.threeD()` | 显式传入应用选择的 modelId；缺少 ID 在请求前失败。 |
-| 导入 `FAL_MUSIC_MODEL` 等模型常量 | 模型 ID 由应用配置；SDK 不再提供支持型号目录。 |
-| `generateMusic({ model, prompt, instrumental })` 使用内置映射 | `generateMusic({ model, input: { 目标模型原生字段 } })`。 |
-| 更换模型时被某个 preset schema 拒绝 | native input 只做 JSON 校验，不实施模型专属参数限制。 |
-| 任意 endpoint 都必须写两个 mapper | 通用文件输出无需 mapper；特殊输入、输出按需分别注入。 |
-| WaveSpeed 全局禁止裸 base64 | 没有 mapResult 时提前要求明确格式；外部 mapper 能正确解析时允许。 |
+| `fal.music()`, `wavespeed.threeD()` | Explicitly pass an application-selected modelId; a missing ID fails before any request. |
+| Importing model constants such as `FAL_MUSIC_MODEL` | Model IDs come from application configuration; the SDK no longer provides a supported-model catalog. |
+| `generateMusic({ model, prompt, instrumental })` with built-in mapping | `generateMusic({ model, input: { /* native fields of the target model */ } })`. |
+| A preset schema rejecting a model change | Native input receives JSON validation only, with no model-specific parameter restrictions. |
+| Having to write both mappers for every endpoint | Common file outputs need no mapper; inject specialized input/output mappings independently as needed. |
+| WaveSpeed globally forbidding bare base64 | An explicit format is required up front when there is no mapResult; external mappers that can parse it correctly are allowed. |
 
-旧平铺参数重载仍保留并标记 deprecated，用于明确接收这些业务输入的外部 mapper 或自定义模型。默认 native JSON 模型使用 `{ model, input }`。例如模型需要 `is_instrumental` 时必须原样传入；SDK 不会将 `instrumental` 自动翻译成某个服务的字段。
+Legacy flattened-parameter overloads are retained and marked deprecated for external mappers or custom models that explicitly accept those business inputs. Default native JSON models use `{ model, input }`. For example, if a model requires `is_instrumental`, pass that field unchanged; the SDK does not automatically translate `instrumental` into a service-specific field.
 
-模型不需要预登记；远端模型是否支持某个任务、输入字段与输出语义仍由其实际 API 决定。遇到不属于常见 File 约定的输出，注入 mapResult，无需改协议层或执行器。
+Models do not need preregistration. Whether a remote model supports a task, its input fields, and its output semantics are still determined by its actual API. For output outside common File conventions, inject mapResult without changing the protocol layer or executor.
+
+## Subsequent Domain and Task APIs
+
+Current core also provides entry points for model processing, analysis, rigging checks, rigging, and character animation, plus `startTask/getTaskStatus/waitForTask/cancelTask/deleteTask`. These are not a replacement migration that removes the legacy Asset API: file generation continues to use AssetModelV1 and AssetOperation, while file-free checks/analysis use independent domain results. Both Tripo and Meshy are implemented in the repository; the early “three providers” scope on this page must not be read as the current package inventory.
+
+The new TaskHandle's v1 persistence marker remains `sine-ai-task`; branding/package-name changes do not require rewriting saved credentials. Resumption must reconstruct the original authorized connection; do not migrate database handles by resubmitting tasks. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full lifecycle and cancellation/deletion capability boundaries.
+
+## Viggle-era Additions
+
+Viggle adds video/image generation, processing, reusable Character/Motion resources, exports and scenes using the existing Asset and Task contracts. Its Render events API opens a single SSE stream; reconnection remains explicit. Existing providers' task receipts and runtime markers remain unchanged.
+
+Task/Asset execution errors now expose optional `response` and `providerMetadata`. Failed/cancelled status diagnostics survive waiting/generation and Asset compatibility conversion; callers inspecting exact error objects should account for these fields and redact sensitive values before logging.
+
+Custom adapters can pass response handlers as the sixth `AssetProviderTransport.request` argument or use `requestRaw` for an unconsumed response. Current transport passes physical `redirect: 'manual'` to custom fetch while logically rejecting redirects by default. Honor manual mode without following `Location`; raw manual opt-in returns the original redirect response. Older exact provider transport pins still use Fetch error mode, and Tripo's separate signed storage PUT requires it. See [architecture](ARCHITECTURE.md#shared-transport-extensions) for full contracts.
