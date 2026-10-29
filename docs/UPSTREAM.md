@@ -69,7 +69,7 @@ npm run check:upstream
 
 [`scripts/check-upstream.mjs`](../scripts/check-upstream.mjs) 只读取本地 manifest 与已安装包，检查 3 个包的包名、精确版本、license，以及 **19 个原始文件的 SHA-256**。缺包、缺文件或任何不匹配均返回非零退出码。
 
-脚本不联网、不安装依赖、不更新基线。CI 在 Node.js 22/24 上执行 `npm ci`、`npm run check` 和 `npm run check:upstream`，不自动发布。
+脚本不联网、不安装依赖、不更新基线。CI 在 Node.js 22/24 上执行 `npm ci` 和 `npm run verify:release`；`main` 合入后的自动发布流程见 [PUBLISHING.md](PUBLISHING.md)。
 
 检查通过只证明安装内容仍匹配已审阅快照，不证明资产编排无 bug，也不会自动发现上游的新修复。运行时的必要不变量由本项目的协议测试验证。
 

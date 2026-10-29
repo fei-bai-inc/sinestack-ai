@@ -5,20 +5,22 @@ import { cp, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { packageDirectories } from './release.mjs';
+import { readPackages } from './release.mjs';
 
 // This release-only gate deliberately installs outside the workspace. A workspace
 // symlink or a development-only dependency must not rescue an incomplete tarball.
 const repository = fileURLToPath(new URL('..', import.meta.url));
 const artifacts = resolve(process.argv[2] ?? join(repository, 'artifacts'));
 const release = JSON.parse(await readFile(join(artifacts, 'manifest.json'), 'utf8'));
-const core = JSON.parse(await readFile(join(repository, 'packages/core/package.json'), 'utf8'));
+const packages = await readPackages(repository);
+const manifests = new Map(packages.map(pkg => [pkg.manifest.name, pkg.manifest]));
+const core = manifests.get('@sinestack/ai-core');
 const root = JSON.parse(await readFile(join(repository, 'package.json'), 'utf8'));
-const names = packageDirectories.map(directory => `@sinestack/ai-${directory}`);
+const names = packages.map(pkg => pkg.manifest.name);
 assert.deepEqual(release.packages.map(pkg => pkg.name).sort(), [...names].sort());
 const dependencies = { ai: core.peerDependencies.ai };
 for (const pkg of release.packages) {
-  assert.equal(pkg.version, core.version, 'The smoke test must consume the current release version.');
+  assert.equal(pkg.version, manifests.get(pkg.name).version, `The smoke test must consume the current version of ${pkg.name}.`);
   assert.equal(basename(pkg.file), pkg.file, 'Tarball filenames must stay inside the artifacts directory.');
   const tarball = join(artifacts, pkg.file);
   const integrity = `sha512-${createHash('sha512').update(await readFile(tarball)).digest('base64')}`;
@@ -52,11 +54,13 @@ try {
     const installed = await realpath(join(consumer, 'node_modules', ...name.split('/')));
     const path = relative(consumer, installed);
     assert(path !== '..' && !path.startsWith(`..${sep}`), `${name} resolved outside the independent consumer.`);
+    const installedManifest = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
+    assert.equal(installedManifest.version, manifests.get(name).version, `Installed version mismatch: ${name}`);
   }
   run(process.execPath, ['node_modules/typescript/bin/tsc', '--noEmit'], 60_000);
   run(process.execPath, ['consumer.mjs'], 120_000);
   run(process.execPath, ['tripo.mjs'], 120_000);
-  console.log(`Independent npm consumer verified all ${names.length} ${core.version} tarballs, public types, and runtime execution.`);
+  console.log(`Independent npm consumer verified all ${names.length} package tarballs, public types, and runtime execution.`);
 } finally {
   await rm(consumer, { recursive: true, force: true });
 }

@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 import { getTaskStatus } from '@sinestack/ai-core';
 import { packageDirectories, readPackages, repository } from '../scripts/release.mjs';
-import { assertDirtyStatusAllowed } from '../scripts/publish.mjs';
 
 test('all workspaces participate in the renamed release and lockfile', async () => {
   const directories = (await readdir(join(repository, 'packages'), { withFileTypes: true }))
@@ -33,34 +31,6 @@ test('tracked source, examples and docs do not reintroduce retired package names
   }
 });
 
-test('version stamping updates every renamed package and the shared runtime', async t => {
-  const temporary = await mkdtemp(join(tmpdir(), 'sinestack-ai-version-test-'));
-  t.after(() => rm(temporary, { recursive: true, force: true }));
-  const files = ['package.json', 'package-lock.json', 'scripts/version.mjs', 'scripts/release.mjs',
-    'packages/core/src/internal/runtime.ts', 'tests/integration.test.mjs',
-    ...packageDirectories.map(name => `packages/${name}/package.json`)];
-  for (const filename of files) {
-    const target = join(temporary, filename);
-    await mkdir(dirname(target), { recursive: true });
-    await copyFile(join(repository, filename), target);
-  }
-  const version = '1.2.3-rename.1';
-  execFileSync(process.execPath, [join(temporary, 'scripts/version.mjs'), version], { cwd: temporary, timeout: 10_000 });
-  const packages = await readPackages(temporary);
-  const lock = JSON.parse(await readFile(join(temporary, 'package-lock.json'), 'utf8'));
-  for (const { directory, manifest } of packages) {
-    assert.equal(manifest.version, version);
-    assert.equal(lock.packages[`packages/${directory}`].version, version);
-    for (const [name, value] of Object.entries(manifest.dependencies ?? {})) {
-      if (name.startsWith('@sinestack/ai-')) assert.equal(value, version);
-    }
-  }
-  const runtime = await readFile(join(temporary, 'packages/core/src/internal/runtime.ts'), 'utf8');
-  assert.ok(runtime.includes(`sinestack-ai/${version}`));
-  const integration = await readFile(join(temporary, 'tests/integration.test.mjs'), 'utf8');
-  assert.ok(integration.includes('sinestack-ai\\/1\\.2\\.3-rename\\.1'));
-  assertDirtyStatusAllowed(files.filter(name => !name.startsWith('scripts/')).map(name => ` M ${name}`).join('\n'), true);
-});
 
 test('persisted v1 tasks created before the package rename still resume without resubmission', async () => {
   const task = JSON.parse('{"type":"sine-ai-task","specificationVersion":"v1","provider":"fixture","driverId":"rig-check","domain":"model3d.rig.check","handle":{"id":"accepted-before-rename"}}');

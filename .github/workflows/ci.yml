@@ -13,6 +13,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-version:
+    name: Release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Validate changed package versions
+        if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/check-release-version.mjs "$BASE_SHA"
+      - name: Prevent a skipped check from satisfying main protection
+        if: ${{ github.event_name == 'pull_request' && github.base_ref != 'main' }}
+        run: exit 1
+
   check:
     name: Node ${{ matrix.node }}
     runs-on: ubuntu-latest
@@ -23,6 +43,8 @@ jobs:
         node: [22, 24]
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
@@ -33,4 +55,9 @@ jobs:
       # source/PR check must not fail just because its version is already on npm.
       # The explicit release workflow retains full verify:release validation.
       - name: Typecheck, build, test, pack, and consumer smoke check
-        run: npm run verify && npm run test:packages
+        run: npm run verify:release
+      - name: Dry-run changed packages
+        if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && matrix.node == 24 }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: npm run release:dry-run -- --base-ref "$BASE_SHA"

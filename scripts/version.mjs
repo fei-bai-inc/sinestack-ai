@@ -1,52 +1,36 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { packageDirectories, repository, validateVersion } from './release.mjs';
+import { packageDirectories, repository } from './release.mjs';
+import { compareStableVersions } from './version-policy.mjs';
 
-const version = process.argv[2];
-assert(version && process.argv.length === 3, 'Usage: npm run version:release -- <version>');
-validateVersion(version);
-
-for (const directory of ['', ...packageDirectories.map(name => `packages/${name}`)]) {
-  const path = join(repository, directory, 'package.json');
-  const manifest = JSON.parse(await readFile(path, 'utf8'));
-  manifest.version = version;
-  if (manifest.dependencies) {
-    for (const dep of Object.keys(manifest.dependencies)) {
-      if (dep.startsWith('@sinestack/ai-')) manifest.dependencies[dep] = version;
-    }
-  }
-  await writeFile(path, JSON.stringify(manifest, null, 2) + '\n');
-}
-
+const [directory, version] = process.argv.slice(2);
+assert(process.argv.length === 4 && packageDirectories.includes(directory), 'Usage: npm run version:release -- <package-directory> <new-version>');
+const readJson = async path => JSON.parse(await readFile(join(repository, path), 'utf8'));
+const targetPath = `packages/${directory}`;
+const target = await readJson(join(targetPath, 'package.json'));
+assert(compareStableVersions(version, target.version) > 0, `New version must be strictly newer than ${target.version}.`);
 const lockPath = join(repository, 'package-lock.json');
-const lock = JSON.parse(await readFile(lockPath, 'utf8'));
-lock.version = version;
-if (lock.packages?.['']) lock.packages[''].version = version;
-for (const directory of packageDirectories) {
-  const entry = lock.packages?.[`packages/${directory}`];
-  if (entry) {
-    entry.version = version;
-    if (entry.dependencies) {
-      for (const dep of Object.keys(entry.dependencies)) {
-        if (dep.startsWith('@sinestack/ai-')) entry.dependencies[dep] = version;
-      }
-    }
-  }
+const lock = await readJson('package-lock.json');
+assert(lock.packages?.[targetPath], `package-lock.json is missing workspace ${targetPath}.`);
+
+let runtimePath, integrationPath, runtime, integration;
+if (directory === 'core') {
+  runtimePath = join(repository, 'packages/core/src/internal/runtime.ts');
+  integrationPath = join(repository, 'tests/integration.test.mjs');
+  runtime = await readFile(runtimePath, 'utf8');
+  integration = await readFile(integrationPath, 'utf8');
+  assert(/sinestack-ai\/[0-9A-Za-z.-]+/u.test(runtime), 'Failed to find runtime user-agent version.');
+  assert(/\/sinestack-ai\\\/[0-9A-Za-z.\\-]+\//u.test(integration), 'Failed to find integration user-agent version.');
 }
+
+target.version = version;
+lock.packages[targetPath].version = version;
+await writeFile(join(repository, targetPath, 'package.json'), JSON.stringify(target, null, 2) + '\n');
 await writeFile(lockPath, JSON.stringify(lock, null, 2) + '\n');
-
-const runtimePath = join(repository, 'packages/core/src/internal/runtime.ts');
-const runtimeSource = await readFile(runtimePath, 'utf8');
-assert(/sinestack-ai\/[0-9A-Za-z.-]+/u.test(runtimeSource), 'Failed to find version in packages/core/src/internal/runtime.ts');
-const updatedRuntime = runtimeSource.replace(/sinestack-ai\/[0-9A-Za-z.-]+/u, `sinestack-ai/${version}`);
-await writeFile(runtimePath, updatedRuntime);
-
-const integrationTestPath = join(repository, 'tests/integration.test.mjs');
-const integrationSource = await readFile(integrationTestPath, 'utf8');
-assert(/\/sinestack-ai\\\/[0-9A-Za-z.\\-]+\//u.test(integrationSource), 'Failed to find version in tests/integration.test.mjs');
-const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-const updatedIntegration = integrationSource.replace(/\/sinestack-ai\\\/[0-9A-Za-z.\\-]+\//u, `/sinestack-ai\\/${escapedVersion}/`);
-await writeFile(integrationTestPath, updatedIntegration);
-
-console.log(`All ${packageDirectories.length} packages are now ${version}. Review and commit package.json, package-lock.json, and versioned files before releasing.`);
+if (directory === 'core') {
+  await writeFile(runtimePath, runtime.replace(/sinestack-ai\/[0-9A-Za-z.-]+/u, `sinestack-ai/${version}`));
+  const escaped = version.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  await writeFile(integrationPath, integration.replace(/\/sinestack-ai\\\/[0-9A-Za-z.\\-]+\//u, `/sinestack-ai\\/${escaped}/`));
+}
+console.log(`Updated ${target.name} to ${version}. After all version and dependency changes, run npm install --package-lock-only --ignore-scripts --no-audit --no-fund and commit the lockfile.`);

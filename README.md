@@ -192,7 +192,7 @@ npm run check:upstream
 npm run verify:release
 ```
 
-`check` 包括类型、构建和 mock 契约测试；CI 使用 Node 22/24。`check:upstream` 离线检查 3 个精确上游包和 19 项源码 hash，不联网更新基线。
+`check` 包含类型、构建和 mock 测试。`check:upstream` 离线核对 3 个上游包的精确版本、许可证和 19 项源文件 hash。CI 使用 Node.js 22/24；PR 合入 `main` 后只发布发生变更的 npm 包，独立版本与合入规则见 [PUBLISHING.md](docs/PUBLISHING.md)。
 
 `verify:release` 还会打包七个 workspace、在工作区之外安装真实 tarball 并检查公开类型和运行调用，最后运行 npm publish dry-run。正式发布沿用 GitHub Actions OIDC 配置；显式发布版本、访问级别和 dist-tag，详见 [PUBLISHING.md](docs/PUBLISHING.md)。
 
