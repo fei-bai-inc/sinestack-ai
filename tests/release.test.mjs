@@ -91,6 +91,7 @@ function fakePublishDeps(options = {}) {
         return { status: 0, stdout: options.npmVersion ?? '11.6.0\n', stderr: '' };
       }
       if (command === 'npm' && args[0] === 'view') {
+        if (args[2] === 'versions') return (options.packageResult ?? (() => ({ status: 0, stdout: JSON.stringify(['0.0.2']), stderr: '' })))(args[1]);
         if (args[2] !== 'version') return viewResult(args[1]);
         if (args[1].endsWith('@0.0.1')) return (options.previousResult ?? (() => ({ status: 0, stdout: JSON.stringify('0.0.1'), stderr: '' })))(args[1]);
         return args[1].endsWith('@latest') ? latestResult(args[1]) : (options.dependencyResult ?? viewResult)(args[1]);
@@ -147,6 +148,28 @@ describe('release publish script', () => {
       { status: 0, stdout: JSON.stringify('0.0.2'), stderr: '' },
     ]) {
       const deps = fakePublishDeps({ previousResult: () => result });
+      await assert.rejects(() => publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps), /retry the earlier release first/);
+      assert.equal(deps.calls.some(call => call[1] === 'publish'), false);
+    }
+  });
+
+  test('allows first publication only when the package itself is absent', async () => {
+    const absent = { status: 1, stdout: JSON.stringify({ error: { code: 'E404' } }), stderr: 'npm error code E404' };
+    const release = createSampleRelease();
+    const deps = fakePublishDeps({ release, changed: [release.packages[6]], previousResult: () => absent, packageResult: () => absent });
+    await publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps);
+    const published = deps.calls.filter(call => call[1] === 'publish');
+    assert.equal(published.length, 1);
+    assert.match(published[0][2], /sinestack-ai-tripo-0\.1\.0\.tgz$/);
+  });
+
+  test('does not treat an existing package or an unauthorized lookup as a first release', async () => {
+    const absent = { status: 1, stdout: JSON.stringify({ error: { code: 'E404' } }), stderr: 'npm error code E404' };
+    for (const packageResult of [
+      { status: 0, stdout: JSON.stringify(['0.0.2']), stderr: '' },
+      { status: 1, stdout: '', stderr: 'npm error code E401' },
+    ]) {
+      const deps = fakePublishDeps({ previousResult: () => absent, packageResult: () => packageResult });
       await assert.rejects(() => publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps), /retry the earlier release first/);
       assert.equal(deps.calls.some(call => call[1] === 'publish'), false);
     }

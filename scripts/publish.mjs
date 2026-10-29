@@ -180,9 +180,18 @@ export async function publishReleasePackages(options, deps = {}) {
       assert(typeof pkg.previousVersion === 'string' && pkg.previousVersion, `Missing base version for ${pkg.name}.`);
       const spec = `${pkg.name}@${pkg.previousVersion}`;
       const previous = runCommand('npm', ['view', spec, 'version', '--json', ...registryArgs], { env: viewEnv });
-      assert.equal(previous.status, 0, `Cannot verify previous release ${spec} on npm; retry the earlier release first.`);
-      assert.equal(JSON.parse(previous.stdout), pkg.previousVersion, `Cannot verify previous release ${spec} on npm; retry the earlier release first.`);
-      checkedDependencies.add(spec);
+      if (isRegistryNotFound(previous.stdout, previous.stderr)) {
+        const existing = runCommand('npm', ['view', pkg.name, 'versions', '--json', ...registryArgs], { env: viewEnv });
+        assert(
+          isRegistryNotFound(existing.stdout, existing.stderr) && existing.status !== 0,
+          `Cannot verify previous release ${spec} on npm; retry the earlier release first.`,
+        );
+        log(`First publication of ${pkg.name}; npm Trusted Publisher must be configured.`);
+      } else {
+        assert.equal(previous.status, 0, `Cannot verify previous release ${spec} on npm; retry the earlier release first.`);
+        assert.equal(JSON.parse(previous.stdout), pkg.previousVersion, `Cannot verify previous release ${spec} on npm; retry the earlier release first.`);
+        checkedDependencies.add(spec);
+      }
     }
     for (const pkg of selected) {
       const manifest = release.manifests.find(item => item.name === pkg.name);

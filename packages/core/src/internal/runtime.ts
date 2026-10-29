@@ -57,7 +57,7 @@ export async function execute<I, R, D extends string, OUT>(
   const ctx: RuntimeContext<I, R, D> = {
     driver, options, api, callId: `task_${generateId()}`,
     signal: mergeAbortSignals(options.abortSignal, options.timeoutMs) ?? new AbortController().signal,
-    headers: withUserAgentSuffix(options.headers ?? {}, 'sinestack-ai/0.1.0'), warnings: [], responses: [],
+    headers: withUserAgentSuffix(options.headers ?? {}, 'sinestack-ai/0.2.0'), warnings: [], responses: [],
     ...(task ? { task } : {}),
   };
   try {

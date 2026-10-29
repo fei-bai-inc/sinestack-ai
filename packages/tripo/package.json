@@ -1,6 +1,6 @@
 {
   "name": "@sinestack/ai-tripo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Tripo v3 generation, model processing, rigging and animation provider for SineStack AI",
   "type": "module",
   "license": "Apache-2.0",
@@ -17,10 +17,12 @@
       "import": "./dist/index.js"
     }
   },
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
-    "@sinestack/ai-provider": "0.1.0",
-    "@sinestack/ai-provider-utils": "0.1.0"
+    "@sinestack/ai-provider": "0.2.0",
+    "@sinestack/ai-provider-utils": "0.1.1"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
