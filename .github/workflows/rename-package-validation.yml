@@ -20,5 +20,9 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Verify archives, installed consumer, and publish dry-run
-        run: npm run verify:release
+      - name: Stamp an isolated validation version without committing or publishing
+        run: npm run version:release -- "0.1.1-rename.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+      - name: Verify archives and installed consumer
+        run: npm run verify && npm run test:packages
+      - name: Validate publication without writing to npm
+        run: node scripts/publish.mjs --dry-run --tag next
