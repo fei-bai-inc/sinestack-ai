@@ -204,7 +204,9 @@ This provider starts at `@sinestack/ai-meshy@0.1.0` and pins `@sinestack/ai-prov
 (the additive analyzer contract) and `@sinestack/ai-provider-utils@0.1.2` (DELETE/empty-response support).
 The compatible core analyzer facade is released in `@sinestack/ai-core@0.1.2`. Under the repository
 0.x rules these additive changes use patch increments, not a shared workspace version bump.
-Tripo, fal, WaveSpeed and Replicate keep their existing versions and dependency pins.
+Tripo also receives a compatible `0.1.2` patch for portable public declarations when older
+exact dependencies are installed; its provider/provider-utils pins remain at `0.1.1`.
+fal, WaveSpeed and Replicate keep both their existing versions and dependency pins.
 
 The new package is explicitly registered in release order, version-policy tests and isolated consumer
 validation. First publication also needs npm-side bootstrap/Trusted Publisher setup; source changes
