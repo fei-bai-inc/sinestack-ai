@@ -240,6 +240,30 @@ describe('release publish script', () => {
     assert.equal(deps.calls.some(call => call[1] === 'publish'), false);
   });
 
+  test('publishes when npm latest is a lower prerelease of a stable release', async () => {
+    for (const latest of ['0.0.0-stage', '0.1.0-rc.1']) {
+      const release = createSampleRelease();
+      const deps = fakePublishDeps({
+        release,
+        changed: [release.packages[7]],
+        latestResult: () => ({ status: 0, stdout: JSON.stringify(latest), stderr: '' }),
+      });
+      await publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps);
+      assert.equal(deps.calls.filter(call => call[1] === 'publish').length, 1);
+    }
+  });
+
+  test('refuses to move latest backward from a newer prerelease', async () => {
+    const release = createSampleRelease();
+    const deps = fakePublishDeps({
+      release,
+      changed: [release.packages[7]],
+      latestResult: () => ({ status: 0, stdout: JSON.stringify('0.2.0-rc.1'), stderr: '' }),
+    });
+    await assert.rejects(() => publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps), /latest is newer/);
+    assert.equal(deps.calls.some(call => call[1] === 'publish'), false);
+  });
+
   test('validates all archives without npm calls in dry-run mode without a base', async () => {
     const deps = fakePublishDeps();
     let loaded = false;
@@ -297,7 +321,7 @@ describe('release publish script', () => {
       { status: 1, stdout: '', stderr: 'npm error code E401' },
       { status: 1, stdout: '', stderr: 'npm error code ECONNREFUSED' },
       { status: 0, stdout: JSON.stringify('not-a-version'), stderr: '' },
-      { status: 0, stdout: JSON.stringify('0.2.0-rc.1'), stderr: '' },
+      { status: 0, stdout: JSON.stringify('0.2.0-rc.01'), stderr: '' },
     ]) {
       const deps = fakePublishDeps({ latestResult: () => result });
       await assert.rejects(() => publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps));

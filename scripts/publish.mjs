@@ -9,6 +9,7 @@ import {
   registry,
   repository,
   sourceIdentity,
+  validateVersion,
 } from './release.mjs';
 import { checkReleaseVersion, compareStableVersions } from './version-policy.mjs';
 
@@ -227,8 +228,12 @@ export async function publishReleasePackages(options, deps = {}) {
         );
         if (latest.status === 0) {
           latestVersion = JSON.parse(latest.stdout);
+          validateVersion(latestVersion);
+          const separator = latestVersion.indexOf('-');
+          const latestBase = separator === -1 ? latestVersion : latestVersion.slice(0, separator);
+          const comparison = compareStableVersions(latestBase, pkg.version);
           assert(
-            compareStableVersions(latestVersion, pkg.version) <= 0,
+            comparison < 0 || (comparison === 0 && separator !== -1) || latestVersion === pkg.version,
             `Cannot publish ${pkg.name}@${pkg.version}: latest is newer (${latestVersion}).`,
           );
         } else {
