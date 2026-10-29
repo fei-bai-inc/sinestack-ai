@@ -14,13 +14,13 @@ const lockPath = join(repository, 'package-lock.json');
 const lock = await readJson('package-lock.json');
 assert(lock.packages?.[targetPath], `package-lock.json is missing workspace ${targetPath}.`);
 
-let executorPath, integrationPath, executor, integration;
+let runtimePath, integrationPath, runtime, integration;
 if (directory === 'core') {
-  executorPath = join(repository, 'packages/core/src/internal/executor.ts');
+  runtimePath = join(repository, 'packages/core/src/internal/runtime.ts');
   integrationPath = join(repository, 'tests/integration.test.mjs');
-  executor = await readFile(executorPath, 'utf8');
+  runtime = await readFile(runtimePath, 'utf8');
   integration = await readFile(integrationPath, 'utf8');
-  assert(/sinestack-ai\/[0-9A-Za-z.-]+/u.test(executor), 'Failed to find executor user-agent version.');
+  assert(/sinestack-ai\/[0-9A-Za-z.-]+/u.test(runtime), 'Failed to find runtime user-agent version.');
   assert(/\/sinestack-ai\\\/[0-9A-Za-z.\\-]+\//u.test(integration), 'Failed to find integration user-agent version.');
 }
 
@@ -29,7 +29,7 @@ lock.packages[targetPath].version = version;
 await writeFile(join(repository, targetPath, 'package.json'), JSON.stringify(target, null, 2) + '\n');
 await writeFile(lockPath, JSON.stringify(lock, null, 2) + '\n');
 if (directory === 'core') {
-  await writeFile(executorPath, executor.replace(/sinestack-ai\/[0-9A-Za-z.-]+/u, `sinestack-ai/${version}`));
+  await writeFile(runtimePath, runtime.replace(/sinestack-ai\/[0-9A-Za-z.-]+/u, `sinestack-ai/${version}`));
   const escaped = version.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   await writeFile(integrationPath, integration.replace(/\/sinestack-ai\\\/[0-9A-Za-z.\\-]+\//u, `/sinestack-ai\\/${escaped}/`));
 }

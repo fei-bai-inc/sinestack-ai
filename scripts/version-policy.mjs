@@ -52,10 +52,10 @@ export async function checkReleaseVersion(baseRef, repo = process.cwd()) {
     }
   }
   const coreVersion = packages.find(({ directory }) => directory === 'core').manifest.version;
-  const executor = await readFile(join(repo, 'packages/core/src/internal/executor.ts'), 'utf8');
-  const agents = [...executor.matchAll(/withUserAgentSuffix\s*\([^\n]*?['"]sinestack-ai\/([^'"\s]+)['"]/gu)];
-  assert.equal(agents.length, 1, 'Expected exactly one sinestack-ai user-agent in executor.ts.');
-  assert.equal(agents[0][1], coreVersion, 'executor.ts user-agent version must match core version.');
+  const runtime = await readFile(join(repo, 'packages/core/src/internal/runtime.ts'), 'utf8');
+  const agents = [...runtime.matchAll(/withUserAgentSuffix\s*\([^\n]*?['"]sinestack-ai\/([^'"\s]+)['"]/gu)];
+  assert.equal(agents.length, 1, 'Expected exactly one sinestack-ai user-agent in runtime.ts.');
+  assert.equal(agents[0][1], coreVersion, 'runtime.ts user-agent version must match core version.');
   const integration = await readFile(join(repo, 'tests/integration.test.mjs'), 'utf8');
   const assertions = [...integration.matchAll(/assert\.match\s*\(\s*headers\.get\(['"]user-agent['"]\)\s*,\s*\/sinestack-ai\\\/([^/]+)\//gu)];
   assert.equal(assertions.length, 1, 'Expected exactly one sinestack-ai user-agent assertion in integration.test.mjs.');

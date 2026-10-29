@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { compareStableVersions } from '../scripts/version-policy.mjs';
 
 const sourceScripts = fileURLToPath(new URL('../scripts/', import.meta.url));
-const directories = ['provider', 'provider-utils', 'core', 'fal', 'wavespeed', 'replicate'];
+const directories = ['provider', 'provider-utils', 'core', 'fal', 'wavespeed', 'replicate', 'tripo'];
 const json = async (path, value) => { await mkdir(join(path, '..'), { recursive: true }); await writeFile(path, JSON.stringify(value, null, 2) + '\n'); };
 const git = (repo, ...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
 const cli = (repo, base = 'HEAD') => spawnSync(process.execPath, ['scripts/check-release-version.mjs', base], { cwd: repo, encoding: 'utf8' });
@@ -34,7 +34,7 @@ async function fixture(t) {
   }
   await json(join(repo, 'package-lock.json'), lock);
   await mkdir(join(repo, 'packages/core/src/internal'), { recursive: true });
-  await writeFile(join(repo, 'packages/core/src/internal/executor.ts'), "withUserAgentSuffix(options.headers, 'sinestack-ai/1.2.3');\n");
+  await writeFile(join(repo, 'packages/core/src/internal/runtime.ts'), "withUserAgentSuffix(options.headers, 'sinestack-ai/1.2.3');\n");
   await mkdir(join(repo, 'tests'), { recursive: true });
   await writeFile(join(repo, 'tests/integration.test.mjs'), "assert.match(headers.get('user-agent'), /sinestack-ai\\/1\\.2\\.3/);\n");
   await writeFile(join(repo, 'tsconfig.base.json'), '{}\n');

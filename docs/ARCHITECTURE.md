@@ -1,99 +1,124 @@
-# 资产生成架构与维护边界
+# 领域接口与共享执行机制
 
-SineStack AI 扩展 AI SDK 尚未提供的资产协议。3D、音效和其他类型化入口共用同一套资产编排；重试策略、signal 合并和观测回调分发直接交给 AI SDK。**这里仍有 SineStack AI 自有的 submit/status/poll/result/cancel 编排，并不是接入了上游现成的通用 Asset executor。**
+SineStack AI 的统一边界是**执行机制**，不是所有业务语义。生成、模型处理、检查、骨骼和动画可以使用不同的输入、调用入口及结果结构，通过同一个泛型 runtime 运行。仅仅都是异步 HTTP 请求或都返回 GLB，不意味着应该共用一个业务结果类型。
 
-## 哪些直接复用，哪些仍需维护
+本项目仍维护必要的 submit/status/poll/result/cancel 编排；重试策略、signal 合并和 callback 分发直接交给 AI SDK。这不是上游现成的通用 Asset executor，也不将 3D 数据伪装成 video 以调用私有函数。
 
-| 职责 | 实现归属 |
+## 实现分层
+
+```text
+资产入口 generateAsset / generate3D / generateMusic / ...
+    -> Asset 兼容边界 internal/executor.ts
+          \
+           -> 唯一执行机制 internal/runtime.ts
+          /
+领域入口 processModel3D / checkRigging / rigModel / animateModel
+    -> tasks.ts / domains.ts
+
+runtime -> TaskDriver 单次执行方法 -> provider HTTP / 原生结果解码
+```
+
+`internal/executor.ts` 保留旧 Asset 语义、错误和 receipt 的转换，不拥有第二份轮询循环。provider 包不依赖 core，也不实现等待、重试或 callback 调度。共享 runtime 对业务 `RESULT` 不设 assets/riggable/parts/clips 等字段约束。
+
+| 层 | 职责 |
 |---|---|
-| 可重试错误分类、Retry-After、指数退避 | AI SDK `prepareRetries`。 |
-| 用户取消与 timeout signal 合并 | AI SDK `mergeAbortSignals`，底层使用原生 AbortSignal。 |
-| Callback await 与错误处理 | AI SDK `mergeCallbacks`；等待完成，忽略回调抛错/拒绝。 |
-| Delay、ID、HTTP/schema、字节转换 | 复用 `@ai-sdk/provider-utils` 的相关工具。 |
-| 文件下载与内存文件结果 | AI SDK `createDownload`、`DefaultGeneratedFile`，由显式物化入口使用。 |
-| Asset kind、输入类型、结果和 operation envelope | SineStack AI provider 协议。 |
-| 选择 direct/async、提交、查询、poll、取消与结果映射 | SineStack AI 必要的资产编排。 |
+| 应用 | 业务策略、原账号/租户授权、关键持久化、多阶段组合、文件长期保存。 |
+| 领域入口 | 用途约束、领域结果校验、自然的返回结构和类型推导。 |
+| 唯一 runtime | 提交、查询、等待、阶段重试、信号、取消/删除、执行记录与 hooks。 |
+| provider 契约 | AssetModelV1、TaskDriver、独立领域接口和任务凭据。 |
+| provider-utils | JSON/连接校验、文件工具和单次 HTTP；没有执行循环。 |
+| provider adapter | 认证、原生路由、参数、状态、结果解码及自身 handle 校验。 |
 
-唯一的 internal 依赖入口是 [`packages/core/src/internal/sdk.ts`](../packages/core/src/internal/sdk.ts)：
+## 对上游的复用
+
+| 职责 | 来源 |
+|---|---|
+| 错误重试分类、Retry-After、退避 | AI SDK prepareRetries。 |
+| 用户 signal 与 timeout 合并 | AI SDK mergeAbortSignals、原生 AbortSignal。 |
+| Callback await 与忽略错误 | AI SDK mergeCallbacks。 |
+| Delay、ID、HTTP/JSON handlers、字节转换 | @ai-sdk/provider-utils 公开 helpers。 |
+| 显式下载与内存文件 | ai createDownload、DefaultGeneratedFile。 |
+| 领域协议、receipt 与任务编排 | SineStack AI 自有代码。 |
+
+唯一的内部依赖入口为 [internal/sdk.ts](../packages/core/src/internal/sdk.ts)：
 
 ```ts
 export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 ```
 
-core 精确依赖 `ai@7.0.155` 的这三个内部导出。其他源码通过这个本地入口使用它们，不直接散布 `ai/internal` 导入。使用 helper 降低了基础逻辑的维护量，但不会让资产编排自动由上游维护。
+依赖仍精确锁定 ai@7.0.155；没有增加一套退避、Retry-After 或通用 abort 引擎。GET、JSON POST、multipart POST 使用公开 SDK helpers。fal 取消所需 PUT 使用单次 fetch 与 SDK response handlers；Tripo signed storage PUT 是不携带 API 凭证的独立上传，不进入认证 transport。
 
-## 包与 provider 协议
+## 独立语义与结果
 
-| 包 | 职责 |
-|---|---|
-| `@sinestack/ai-provider` | `AssetModelV1`、资产文件、operation/status，以及可注入的 `AssetModelMapping`。 |
-| `@sinestack/ai-core` | 协议校验、必要的资产编排、类型化 facade 和显式物化。 |
-| `@sinestack/ai-provider-utils` | 共享 JSON/连接校验、默认文件解析与单次 HTTP；调用公开 AI SDK 请求和响应 helpers。 |
-| `@sinestack/ai-fal` | 通用 fal queue 协议；模型由调用方选择，输入/结果可外部映射。 |
-| `@sinestack/ai-wavespeed` | 通用 WaveSpeed prediction 协议，不维护模型目录。 |
-| `@sinestack/ai-replicate` | 通用 Replicate prediction 与固定版本协议，不维护模型目录。 |
+既有 `AssetModelV1<INPUT,KIND>` 继续承载文件生成，`generateAsset` 保证非空 assets 和非可选 asset。音乐、音效、3D 等 facade 只约束 kind，保留原生输入。fal/WaveSpeed/Replicate 仍不维护模型目录，也不强迫所有模型使用一个参数 schema。
 
-三个远端 adapter 共用 provider-utils 的 transport。这个工具层只验证目的地、构造认证 header 并发起一次请求；它没有循环、重试策略、生命周期或 AbortController。GET/POST、JSON 响应解析与 HTTP 错误分类直接使用 AI SDK 公开实现。fal 取消所需的 PUT 没有对应的 SDK 公开请求 helper，因此只保留一次 fetch，并使用相同的 SDK response handlers。
+新增领域契约通过组合 `TaskDriver<INPUT,RESULT,DOMAIN>` 共用执行能力：
 
-Provider 的能力方法只设置 kind，modelId 必填，默认原样传递 native JSON。协议层没有模型常量、默认模型、型号白名单或具体模型参数 schema。默认结果解析只处理通用文件约定；任意外部包可以实现 `AssetModelMapping` 并通过 `mapInput` / `mapResult` 独立替换映射。新增同平台模型不需要修改 SDK。
+| 领域 | 入口与对象 | 结果 |
+|---|---|---|
+| 模型处理 | processModel3D / Model3DProcessor | 具体 processor 推导模型、部件、UV 或报告。 |
+| 骨骼检查 | checkRigging / RigChecker | 直接得到 riggable 等结论，无需空 assets。 |
+| 骨骼绑定 | rigModel / ModelRigger | 模型、骨骼和实际附带产物。 |
+| 角色动画 | animateModel / ModelAnimator | 文件与供应商明确报告的 clip 信息。 |
 
-`AssetModelV1<INPUT, KIND>` 标识版本、provider、modelId、kind，并提供以下单次操作：
+不同用途的能力不能仅因生命周期一致而互传。接口使用函数属性及 NoInfer 保留输入约束。处理结果不采用包含所有端点可选字段的大 union；生成和检查也不共享一个强制的 `output + assets` 信封。
 
-| 方法 | 职责 |
-|---|---|
-| `doGenerate` | 一次直接生成，返回资产结果。 |
-| `doStart` | 一次异步提交，返回不透明 JSON operation。 |
-| `doStatus` | 查询原 operation 一次，必要时获取已完成的结果。 |
-| `doCancel` | 可选：请求取消原 operation。 |
+新领域结果的业务字段位于顶层，公共执行信息放在 `execution`。高级 `waitForTask` 返回 `{ result, execution }`，其中 result 保留具体驱动类型。领域结果检查与最终组装在 runtime 的调用体内完成，所以 onFinish 观察到的是返回给调用方的同一个对象；结果校验失败走 onError。
 
-模型实现 `doGenerate` 或完整的 `doStart`/`doStatus` 对，也可两者都实现。方法、能力字段及组合会被校验。`idempotentStart` / `idempotentGenerate` 由 adapter 明确保证远端幂等；一个 header 本身不足以建立这个保证。
+文件本体复用 AssetFile。多文件、多个 clip、不同格式和多个 part 分别表达，不为凑统一结构捏造对应关系。没有供应商元数据时保留未知，而不是从文件数量猜 clip 数量。
 
-## 公开入口与不变量
+## Driver 协议
 
-`generateAsset` 选择直接生成或 submit + wait；`startAsset` 只提交；`getAssetStatus` 只查询；`waitForAsset` 等待已有任务；`cancelAsset` 显式请求远端取消。`generate3D` / `generateSoundEffect` / `generateMusic` / `generateAnimation3D` 只约束输入与 kind，进入 `generateAsset`。
+TaskDriver 提供 `doExecute`，或者完整的 `doStart/doStatus`，也可以同时提供。可选的 `doCancel` 与 `doDelete` 区分停止远端工作和删除任务/产物。`validateHandle` 是恢复前的纯同步校验点。
 
-获得 operation 后，status 请求失败、webhook 异常或等待取消都不会进入提交路径。远端 failed/cancelled 是任务状态，不是重新提交的理由。类型化 facade 和 provider adapter 不复制这些循环。
+每个方法只做一次 provider 操作。status 返回 pending/running/completed/failed/cancelled；completed 携带泛型 result。runtime 不需要识别 Tripo、Meshy 或任何业务字段，也没有供应商专用分支。
 
-operation envelope 绑定版本、provider、modelId、kind 与 provider 自有的 JSON payload。提交和恢复入口都建立冻结的数据快照；恢复在 `onStart` 前完成校验和绑定。之后查询、等待和取消仍使用原连接身份，已有 handle 可随错误提供给调用者。
+动作目录、余额等普通同步资源查询可以直接调用请求工具，不制造 task ID 和 pending 状态。独立 motion、可打印性分析及其他将来领域可以定义自己的语义接口，不要求此轮提前实现全部 endpoint 或建通用 DAG 系统。
 
-Provider operation 还校验原连接的 API 地址及远端任务标识。它不包含 API key，也不能代替应用自己的 tenant/connection 授权。原生结果以 `providerMetadata.<provider>.output` 和统一的非空 `assets` 并存，不扩展出第二套结果或执行契约。通用接口、外部映射与各 provider 边界见 [MEDIA_PROVIDERS.md](MEDIA_PROVIDERS.md)。
+## 提交、恢复与身份
 
-关键持久化放在公开调用返回之后：`const started = await startAsset(...)`，然后 `await saveOperation(started.operation)`。如果保存失败，继续使用这个 handle 补写或恢复。`onOperation` 是观测事件，其失败不会使提交失败。
+TaskHandle 使用 `type: 'sine-ai-task'` 与 v1 标记，绑定 provider、driverId、domain、可选 modelId/connectionId，并保留已知 submittedAt 和 opaque JSON handle。这个持久化协议标记刻意保持稳定，不随 SineStack AI 包名和仓库地址变化；不要对数据库中的任务凭据做品牌字符串替换。driverId 用于稳定路由和恢复，不是调用方必须记忆的全局业务操作目录。
 
-## Retry：只保留资产相关的选择
+新 receipt 的完整 JSON 信封在访问字段前检查 descriptor；提交/恢复建立深冻结快照。恢复的 driver.validateHandle 在 hooks 和认证 I/O 前运行。Tripo 校验原 baseURL、原生 route、model、connection 与安全 task ID，不接受响应中任意 URL 作为带凭据的目标。
 
-SineStack AI 保留每阶段的 retry 次数与幂等门：start/generate/cancel 默认 `0`，status 默认 `2`。正数 start/generate retry 需要对应模型能力。每次逻辑提交的幂等键在重试之外生成，同一提交的重试保持不变。
+旧 Asset receipt 保持原 specificationVersion/provider/modelId/kind/operation 结构，通过兼容边界进入 runtime。旧 provider 的内层连接校验仍由其单次方法在请求前执行。类型区分不能替代运行时凭据校验。
 
-实际 retry 策略直接由 `prepareRetries` 提供。资产层不实现独立的错误分类、Retry-After 解析、退避上限或 initial delay。也不暴露 `onAttempt`、`onRetry` 作为第二套 retry 观测协议。
+两种 receipt 都不保存 API key。连接标识只能帮助校验绑定，不能替代应用恢复同一账号/租户并执行授权。无稳定 connectionId 时，仅凭同一个 baseURL 无法识别 API key 是否已换账号。
 
-## Timeout 与取消：合作式 signal
+`startTask` 或 `startAsset` 返回后，显式 await 应用持久化。保存失败时继续保存原 handle，不重新提交。恢复查询失败、webhook 异常、远端 failed 或本地中止都不进入重新提交路径。
 
-`timeoutMs` 为本次调用生成 timeout signal，`poll.timeoutMs` 为完成等待阶段生成 timeout signal，后者默认 10 分钟。SDK 将它们与用户 signal 合并并传给 provider、重试及轮询 sleep。第一次 status 查询立即发生，之后默认间隔 2 秒。
+## 重试、超时与观察
 
-这里没有通用的 abort controller 管理层、WeakMap deadline、通用 Promise 竞争或严格墙钟检查。取消是否能结束正在进行的请求，取决于 provider 或自定义 downloader 是否响应 signal。一个忽略 signal 的 Promise 或挂住的 hook，仍可能使调用无法返回；timeout 是取消通知，不是对任意用户代码的强制终止。
+提交/直接执行/取消/删除默认重试 0 次，状态读取默认 2 次。正数提交或直接执行重试需要 provider 明确声明幂等能力。同一逻辑提交的幂等键在 retry 闭包外产生；返回凭据校验也在闭包外，避免已受理的任务因本地验证失败被再次创建。
 
-webhook 通知等待保留局部 `Promise.race`：等待通知或 SDK `delay` 的完成/取消。这个局部处理不扩展为通用强制超时层。通知到达后的 status 查询仍采用合作式取消。
+真实 retry 分类与退避由 prepareRetries 决定。不新增 onAttempt/onRetry，不重新实现上游网络错误策略。
 
-`poll.delay` 只替换轮询 sleep，调用方应响应收到的 signal。它不接管时钟、完整调度器或持久化重放。本地 abort 也不会自动调用 `doCancel`，远端取消始终是显式操作。
+默认轮询首次立即查询，后续每 2 秒；poll.timeoutMs 默认 10 分钟，timeoutMs 约束本次调用信号。取消是合作式的：不强制结束忽略 signal 的 provider Promise 或不返回的 hook。本地 abort 不调用远端 cancel/delete。poll.delay 仅替换 sleep，不提供持久化重放。
 
-## Hooks：可等待的观测回调
+hooks 只有 onStart/onOperation/onProgress/onFinish/onError，通过 mergeCallbacks await 并忽略错误。日志适合放入 hooks，鉴权和必须成功的持久化不适合。
 
-只有五个 hooks：`onStart`、`onOperation`、`onProgress`、`onFinish`、`onError`。`onError` 包括调用退出时的 abort/timeout 错误。
+## Webhook 边界
 
-它们通过 SDK `mergeCallbacks` 调用：会 await，但抛错和 Promise rejection 被忽略。因此 callback 失败不改变生成结果、不引发 provider 重试，也不存在 `AssetHookError` 或独立终态状态机。一个永不 settle 的 hook 仍会阻塞调用。
+旧 Asset submission webhook factory 及“通知后仍非终态则错误”的行为保持。新任务可提供一个已经认证、关联好的 notification，收到后查询同一任务；查询尚未终态则继续轮询。通知丢失会消耗等待预算，因此交付不可靠时优先普通轮询。本轮没有 SSE/watch 实现。
 
-日志、指标和非关键状态展示适合放入 hooks。鉴权、必须成功的持久化或业务事务应由应用显式 await，不能依赖 hook 抛错来阻断执行。
+Tripo 使用账户级订阅，不声明提交级 callback 能力。verifyTripoWebhook 使用 Web Crypto 验证原始字节与时间窗，返回签名 event.id 作为去重键。宿主应根据可信路由解析 connection，使用可信 endpoint ID，原子保存 connection + event.id 和 outbox。unsigned delivery headers 不能充当已认证的去重身份。
 
-## Webhook 与文件
+Webhook 只唤醒已登记任务的权威查询，不直接接纳其中的生成结果，也不允许回调决定携带凭据访问的地址。
 
-模型声明 webhook 能力时才调用 `generateAsset` 的 factory；不支持时改用 polling，不调用 factory。接收端负责认证和关联通知，再 resolve `received`。SDK 把通知当成查询时机，之后查询同一 operation；仍非终态时报告错误，不重新提交。
+## 旧 Asset 兼容要求
 
-`AssetFile` 保存 URL、binary 或 base64。URL 默认不下载；`materializeAsset` 显式转成 SDK `GeneratedFile`。生成与下载具有独立失败边界，自定义 downloader 负责自己的网络策略和对 signal 的响应。
+保留非空 assets、非可选 asset、旧 auto/direct/async 选路及双能力模型；query 可以返回 failed/cancelled，wait/generate 才将其转换成终态异常。旧 AssetExecutionError/AssetTimeoutError/AssetAbortError、ASSET_* code、phase 与 operation 继续支持。
 
-## 扩展、验证与边界
+原有输入推导、kind 检查、hooks 字段和时机、幂等门及凭据快照保持。Task 与 Asset 的错误/receipt 转换仅存在于兼容边界，不污染通用 runtime 或 provider。
 
-新增 kind、输入/结果映射和单次 provider 方法，不新增执行框架。协议测试继续覆盖能力选择、查询不重提、幂等键稳定、operation 校验、合作式取消、webhook fallback、callback 错误被忽略和 URL 不自动下载。
+## 文件、多阶段与验证
 
-Node.js 22/24 是 CI 配置的环境；尚未完成 Cloudflare/workerd 运行验证。SineStack AI 不实现数据库、队列、租约或崩溃恢复服务，外部任务系统可以持久化 operation 并分次调用 start/status/cancel。
+AssetFile 可以是 URL、binary、base64。URL 默认不下载，materializeAsset 是显式独立阶段。长期文件保存、下载网络策略和字节上限由应用控制。URL 失效不应触发重新生成收费任务。
 
-上游版本和源文件 hash 的检查见 [UPSTREAM.md](UPSTREAM.md)；这次收缩删除的 API 和行为承诺见 [MIGRATION.md](MIGRATION.md)。
+Tripo import/check/rig/retarget 和 Meshy 风格 preview/refine 均按独立阶段保存与恢复。检查引用不天然是模型资源，task ID 也不能跨供应商直接使用。隐式工作流如果将来提供，需要有明确的各阶段状态和持久化边界，不能冒充单个远端提交。
+
+Node 22/24 CI 包括旧 provider 回归、新领域运行与类型测试、Tripo 所有 20 个端点的 mock 契约、上传/通知安全及 Meshy 风格 fixture。发布验证还会在工作区之外安装七个 `@sinestack/ai-*` tarball，检查公开声明与运行调用。版本脚本更新公共 runtime 的 User-Agent，不再修改仅作兼容层的 executor。
+
+这些测试不证明真实 API 权限、所有模型版本组合和二进制资产内容正确。Meshy adapter、真实计费联调、Cloudflare/workerd 验证、SSE 与持久化调度器均不能据此宣称已完成。
+
+详见 [Tripo 实现与联调边界](TRIPO.md)、[聚合 provider](MEDIA_PROVIDERS.md)、[发布](PUBLISHING.md)、[上游精确基线](UPSTREAM.md) 和 [历史迁移](MIGRATION.md)。

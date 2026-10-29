@@ -20,6 +20,7 @@ const expectedPackageNames = [
   '@sinestack/ai-fal',
   '@sinestack/ai-wavespeed',
   '@sinestack/ai-replicate',
+  '@sinestack/ai-tripo',
 ];
 
 function createSampleRelease(version = '0.1.0') {
@@ -103,7 +104,7 @@ function fakePublishDeps(options = {}) {
 }
 
 describe('release metadata and archive contract', () => {
-  test('declares all six @sinestack/ai-* packages in topological dependency order', async () => {
+  test('declares all seven @sinestack/ai-* packages in topological dependency order', async () => {
     assert.deepEqual(packageDirectories, [
       'provider',
       'provider-utils',
@@ -111,6 +112,7 @@ describe('release metadata and archive contract', () => {
       'fal',
       'wavespeed',
       'replicate',
+      'tripo',
     ]);
     const packages = await readPackages();
     assert.deepEqual(
@@ -284,8 +286,8 @@ describe('release publish script', () => {
       latestResult: () => ({ status: 0, stdout: JSON.stringify('0.9.0'), stderr: '' }),
     });
     await publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public']), deps);
-    assert.equal(deps.calls.filter(call => call[1] === 'view' && call[2].endsWith('@latest')).length, 6);
-    assert.equal(deps.calls.filter(call => call[1] === 'publish').length, 6);
+    assert.equal(deps.calls.filter(call => call[1] === 'view' && call[2].endsWith('@latest')).length, expectedPackageNames.length);
+    assert.equal(deps.calls.filter(call => call[1] === 'publish').length, expectedPackageNames.length);
   });
 
   test('does not compare latest when publishing a prerelease to another tag', async () => {
@@ -294,7 +296,7 @@ describe('release publish script', () => {
       latestResult: () => { throw new Error('unexpected latest lookup'); },
     });
     await publishReleasePackages(parsePublishOptions(['--base-ref', 'base', '--access', 'public', '--tag', 'next']), deps);
-    assert.equal(deps.calls.filter(call => call[1] === 'publish').length, 6);
+    assert.equal(deps.calls.filter(call => call[1] === 'publish').length, expectedPackageNames.length);
   });
 
   test('skips already published packages on retry when registry integrity matches local pack', async () => {
@@ -325,9 +327,7 @@ describe('release publish script', () => {
       deps,
     );
 
-    assert.equal(published.length, 4);
-    assert.equal(published.some(path => path.includes('sinestack-ai-provider-0.1.0.tgz')), false);
-    assert.equal(published.some(path => path.includes('sinestack-ai-provider-utils-0.1.0.tgz')), false);
+    assert.equal(published.length, expectedPackageNames.length - 2);
     assert.equal(
       deps.logs.some(line =>
         line.includes('Already published with matching integrity: @sinestack/ai-provider@0.1.0'),

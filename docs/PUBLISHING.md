@@ -1,6 +1,6 @@
 # Publishing `@sinestack/ai-*`
 
-The six packages have **independent versions**. Only changed packages are published, in dependency order: `@sinestack/ai-provider`, `@sinestack/ai-provider-utils`, `@sinestack/ai-core`, `@sinestack/ai-fal`, `@sinestack/ai-wavespeed`, and `@sinestack/ai-replicate`. An unchanged package keeps its own version and its existing exact dependency pins, even when a newer dependency exists.
+The seven packages have **independent versions**. Only changed packages are published, in dependency order: `@sinestack/ai-provider`, `@sinestack/ai-provider-utils`, `@sinestack/ai-core`, `@sinestack/ai-fal`, `@sinestack/ai-wavespeed`, `@sinestack/ai-replicate`, and `@sinestack/ai-tripo`. An unchanged package keeps its own version and its existing exact dependency pins, even when a newer dependency exists.
 
 ## Pull request and version rules
 
@@ -41,4 +41,4 @@ npm run check:release-version -- origin/main
 npm run verify:release
 ```
 
-The first check compares the current tree with fetched `origin/main`. `verify:release` builds and typechecks, runs tests and upstream checks, packs all six workspaces, installs them into an isolated consumer and executes that consumer. It does not publish. To dry-run unpublished changed packages, use `npm run release:dry-run -- --base-ref origin/main` after `verify:release`; it queries npm and may require authentication for private packages. Actual publish uses the committed `main` tree and OIDC.
+The first check compares the current tree with fetched `origin/main`. `verify:release` builds and typechecks, runs tests and upstream checks, packs all seven workspaces, installs them into an isolated consumer and executes that consumer, including Tripo. It does not publish. To dry-run unpublished changed packages, use `npm run release:dry-run -- --base-ref origin/main` after `verify:release`; it queries npm and may require authentication for private packages. Actual publish uses the committed `main` tree and OIDC.

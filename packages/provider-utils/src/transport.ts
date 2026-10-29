@@ -6,6 +6,7 @@ import {
   jsonSchema,
   loadApiKey,
   postJsonToApi,
+  postFormDataToApi,
   type ResponseHandler,
 } from '@ai-sdk/provider-utils';
 import type { AssetModelV1OperationOptions, AssetResponse, JSONObject } from '@sinestack/ai-provider';
@@ -68,14 +69,16 @@ export class AssetProviderTransport {
     value: string | URL,
     method: 'GET' | 'POST' | 'PUT',
     options: Pick<AssetModelV1OperationOptions, 'headers' | 'abortSignal'>,
-    body?: JSONObject,
+    body?: JSONObject | FormData,
     allowEmpty = false,
   ): Promise<AssetProviderResponse> {
     // Check the destination before loading or attaching credentials.
     const url = httpURL(typeof value === 'string' ? value : value.href, `${this.settings.provider} request URL`);
     this.validateDestination(url);
     options.abortSignal.throwIfAborted();
-    const requestBody = body === undefined ? undefined : jsonObject(body, `${this.settings.provider} request body`);
+    const formData = body instanceof FormData ? body : undefined;
+    if (formData !== undefined && method !== 'POST') throw new TypeError('Multipart transport requires POST');
+    const requestBody = body === undefined || formData !== undefined ? undefined : jsonObject(body, `${this.settings.provider} request body`);
     const headers = new Headers(this.settings.headers);
     new Headers(options.headers).forEach((header, key) => headers.set(key, header));
     headers.set('Authorization', `${this.settings.authorizationScheme ?? 'Bearer'} ${loadApiKey({
@@ -85,6 +88,7 @@ export class AssetProviderTransport {
     })}`);
     headers.set('Accept', 'application/json');
     if (requestBody !== undefined) headers.set('Content-Type', 'application/json');
+    if (formData !== undefined) headers.delete('Content-Type'); // fetch must supply its multipart boundary.
 
     // Custom fetch remains an injection point. Native fetch must never follow a
     // provider redirect with credentials; custom fetch must honor redirect:error.
@@ -130,6 +134,7 @@ export class AssetProviderTransport {
           credentialedOrigin: this.base.origin,
         })).value;
       }
+      if (method === 'POST' && formData !== undefined) return (await postFormDataToApi({ ...common, formData })).value;
       if (method === 'POST') return (await postJsonToApi({ ...common, body: requestBody })).value;
 
       // AI SDK has no public PUT helper. fal cancellation needs one PUT, with the

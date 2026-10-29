@@ -14,6 +14,7 @@ export const packageDirectories = [
   'fal',
   'wavespeed',
   'replicate',
+  'tripo',
 ];
 export const artifacts = join(repository, 'artifacts');
 

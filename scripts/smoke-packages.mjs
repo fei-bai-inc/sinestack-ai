@@ -59,7 +59,8 @@ try {
   }
   run(process.execPath, ['node_modules/typescript/bin/tsc', '--noEmit'], 60_000);
   run(process.execPath, ['consumer.mjs'], 120_000);
-  console.log('Independent npm consumer verified all six package tarballs, public types, and runtime execution.');
+  run(process.execPath, ['tripo.mjs'], 120_000);
+  console.log(`Independent npm consumer verified all ${names.length} package tarballs, public types, and runtime execution.`);
 } finally {
   await rm(consumer, { recursive: true, force: true });
 }
