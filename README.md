@@ -19,9 +19,15 @@
 
 每个 adapter 方法只完成一次 provider 操作，不增加自己的 polling、重试、abort 或 hook 执行机制。kind 入口只标记资产类型，不选择模型，也不推断远端模型能力。
 
-## 从源码使用
+## 安装与从源码使用
 
-**这些包尚未发布到 npm。** 当前通过仓库的 npm workspaces 使用，需要 Node.js 22 或 24：
+从 npm 安装（需要 Node.js 22 或 24，以及锁定的 `ai@7.0.155`）：
+
+```sh
+npm install ai@7.0.155 @sinestack/ai-core @sinestack/ai-fal @sinestack/ai-wavespeed @sinestack/ai-replicate
+```
+
+或通过仓库的 npm workspaces 从源码构建：
 
 ```sh
 git clone https://github.com/fei-bai-inc/sinestack-ai.git
@@ -205,4 +211,4 @@ node --experimental-strip-types examples/media-providers.ts
 
 基线为 `ai@7.0.155`、`@ai-sdk/provider@4.0.34`、`@ai-sdk/provider-utils@5.0.70`。core 的 `ai` peer dependency 精确锁定；internal 导入集中在 `packages/core/src/internal/sdk.ts`，升级需审阅。
 
-项目采用 Apache-2.0，保留 Vercel 与 SineStack AI 的归属。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE)、[UPSTREAM.md](docs/UPSTREAM.md)、[ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [迁移说明](docs/MIGRATION.md)。
+项目采用 Apache-2.0，保留 Vercel 与 SineStack AI 的归属。详见 [LICENSE](LICENSE)、[NOTICE](NOTICE)、[UPSTREAM.md](docs/UPSTREAM.md)、[ARCHITECTURE.md](docs/ARCHITECTURE.md)、[PUBLISHING.md](docs/PUBLISHING.md) 和 [迁移说明](docs/MIGRATION.md)。

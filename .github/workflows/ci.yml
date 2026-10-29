@@ -29,7 +29,5 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
-      - name: Typecheck, build, and test
-        run: npm run check
-      - name: Verify reviewed upstream source
-        run: npm run check:upstream
+      - name: Typecheck, build, test, pack, and consumer smoke check
+        run: npm run verify:release
