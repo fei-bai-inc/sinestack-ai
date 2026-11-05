@@ -1,0 +1,12 @@
+SineStack AI World Labs provider
+Copyright 2026 SineStack AI contributors.
+Licensed under the Apache License, Version 2.0.
+
+This adapter uses SineStack AI contracts and the shared transport which depend on
+Vercel AI SDK (Copyright 2023 Vercel, Inc.; Apache-2.0).
+Provider methods perform single protocol operations. Retry, signal composition,
+callbacks and waiting belong to the shared core and pinned AI SDK helpers.
+The World Labs OpenAPI specification and documentation were used as protocol
+references; no official SDK execution engine is copied or embedded.
+https://docs.worldlabs.ai/api/reference/openapi.yaml
+https://github.com/fei-bai-inc/sinestack-ai

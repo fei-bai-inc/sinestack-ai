@@ -48,11 +48,11 @@ runtime -> TaskDriver 单次执行方法 -> provider HTTP / 原生结果解码
 export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 ```
 
-依赖仍精确锁定 ai@7.0.155；没有增加一套退避、Retry-After 或通用 abort 引擎。默认重定向策略下，GET、JSON POST、multipart POST 使用公开 SDK helpers。PUT 和 DELETE 使用受限目的地的单次 fetch 与 SDK response handlers。Tripo 和 Viggle 的签名存储 PUT 使用独立请求，不携带 API 凭据。
+依赖仍精确锁定 ai@7.0.155；没有增加一套退避、Retry-After 或通用 abort 引擎。默认重定向策略下，GET、JSON POST、multipart POST 使用公开 SDK helpers。PUT 和 DELETE 使用受限目的地的单次 fetch 与 SDK response handlers。Tripo、Viggle 和 World Labs 的签名存储 PUT 使用独立请求，不携带 API 凭据。
 
 ### 共享 Transport 扩展
 
-本节描述 Viggle 使用的当前 provider-utils 源码。fal/WaveSpeed/Replicate、Tripo 和 Meshy 保留使用 Fetch `redirect: 'error'` 的旧版精确 transport 依赖；安装新版顶层 provider-utils 不会替换这些嵌套固定版本。下文 workerd 证据按此限定范围。
+本节描述当前 provider-utils 源码，包括 Viggle 和 World Labs 使用的 transport 扩展。现有 adapter 保留精确依赖固定版本：fal/WaveSpeed/Replicate、Tripo 和 Meshy 使用旧版 transport 的 Fetch `redirect: 'error'`。安装新版顶层 provider-utils 不会替换嵌套固定版本。下文 workerd 证据按此限定范围。
 
 `AssetProviderTransport.request(url, method, options, body?, allowEmpty?, handlers?)` 返回 `{ url, statusCode, value, response: { headers, body } }`。`options` 要求 `headers` 和 `abortSignal`。第四个参数接受 JSON 对象，或仅在 POST 时接受 `FormData`；DELETE 不接受请求体。第五个参数显式允许空 HTTP 200/204 响应，供删除端点使用。未启用时，默认生成解码仍要求有效 JSON。
 
@@ -62,7 +62,9 @@ export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 
 两种方法都在读取凭据前校验配置的 origin 和路径前缀，并在逐调用 headers 之后应用连接认证。每次物理 fetch 使用 `redirect: 'manual'`，因为 workerd 拒绝 Fetch 的 error 模式。默认逻辑策略通过错误 handler 拒绝非成功响应；raw `'manual'` 额外允许返回 HTTP 301/302/303/307/308，但不跟随 `Location`。已经跟随重定向或响应 URL 已改变时，抛出不可重试的 API 错误。自定义 fetch 必须遵守 manual 模式，adapter 不得携带 API 凭据跟随重定向。
 
-签名存储客户端保持独立：Viggle 使用物理 manual 模式、拒绝重定向，仅发送上传计划要求的 headers；Tripo 使用 `redirect: 'error'`。两者均省略浏览器凭据和 API 连接 headers。Viggle 的认证下载查询返回签名 URL 而不跟随跳转；随后不携带 API 凭据的下载由应用控制。
+`AssetProviderTransportOptions.apiKeyHeader`（自 provider-utils `0.1.5` 提供）将原始 API key 放入指定请求头，替代 Authorization 构造。World Labs 使用 `WLT-Api-Key`。省略时保持 Authorization 和 `authorizationScheme` 行为，不隐式升级现有 adapter 依赖。
+
+签名存储客户端保持独立：Viggle 和 World Labs 使用物理 manual 模式、拒绝重定向，仅发送上传计划要求的 headers；Tripo 使用 `redirect: 'error'`。三者均省略浏览器凭据和 API 连接 headers。Viggle 的认证下载查询返回签名 URL 而不跟随跳转；随后不携带 API 凭据的下载由应用控制。
 
 ## 独立语义与结果
 
@@ -140,8 +142,8 @@ AssetFile 可以是 URL、binary、base64。URL 默认不下载，materializeAss
 
 Tripo import/check/rig/retarget 和 Meshy preview/refine 均按独立阶段保存与恢复。检查引用不天然是模型资源，task ID 也不能跨供应商直接使用。隐式工作流如果将来提供，需要有明确的各阶段状态和持久化边界，不能冒充单个远端提交。
 
-Node 22/24 CI 的检查范围包括旧 provider 回归、各领域运行与类型测试、Tripo 20 个操作、Meshy 18 个能力及 Viggle 的 mock 契约、恢复、上传/通知安全。发布验证会在工作区之外安装全部九个 `@sinestack/ai-*` tarball，检查公开声明与运行调用。各包独立版本化；core 版本脚本更新公共 runtime 的 User-Agent，不修改兼容 executor。这些是仓库检查范围，不是一次新的验证结果。
+Node 22/24 CI 的检查范围包括旧 provider 回归、各领域运行与类型测试、Tripo 20 个操作、Meshy 18 个能力、Viggle 和 World Labs 的 mock 契约、恢复、上传/通知安全。发布验证会在工作区之外安装全部十个 `@sinestack/ai-*` tarball，检查公开声明与运行调用。各包独立版本化；core 版本脚本更新公共 runtime 的 User-Agent，不修改兼容 executor。这些是仓库检查范围，不是一次新的验证结果。
 
 [workerd 固定样例](../tests/workerd/README.zh-CN.md) 记录了四项使用模拟 HTTP 的真实运行时检查，覆盖 Viggle/core 恢复与无损 seed、multipart Blob、SSE 解析及签名上传。这不是 Cloudflare 部署或所有 provider 的验收。测试不证明真实 API 权限、所有模型版本组合、二进制资产内容、Meshy Creative Lab/SSE 支持或持久化调度器。
 
-详见 [Tripo](TRIPO.zh-CN.md)、[Meshy 实现与联调边界](MESHY.zh-CN.md)、[Viggle](VIGGLE.zh-CN.md)、[聚合 provider](MEDIA_PROVIDERS.zh-CN.md)、[发布](PUBLISHING.zh-CN.md)、[上游精确基线](UPSTREAM.zh-CN.md) 和 [历史迁移](MIGRATION.zh-CN.md)。
+详见 [Tripo](TRIPO.zh-CN.md)、[Meshy 实现与联调边界](MESHY.zh-CN.md)、[Viggle](VIGGLE.zh-CN.md)、[World Labs](WORLDLABS.zh-CN.md)、[聚合 provider](MEDIA_PROVIDERS.zh-CN.md)、[发布](PUBLISHING.zh-CN.md)、[上游精确基线](UPSTREAM.zh-CN.md) 和 [历史迁移](MIGRATION.zh-CN.md)。

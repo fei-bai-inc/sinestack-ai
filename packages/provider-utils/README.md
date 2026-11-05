@@ -74,6 +74,8 @@ export async function readStatus({ baseURL, statusURL, apiKey, signal }) {
 
 Pass an `AbortSignal`, such as `new AbortController().signal`. The transport reads the supplied server-side `apiKey` or `CUSTOM_API_KEY` environment variable and uses Bearer authentication by default; set `authorizationScheme: 'Key'` for APIs that require it. Remote calls use the provider account and may incur charges.
 
+For raw API-key headers, set `apiKeyHeader: 'WLT-Api-Key'` (available since `0.1.5`). The transport sends the key as that header's value without a Bearer/Key prefix; omitting `apiKeyHeader` preserves the existing Authorization behavior. World Labs uses this option. Keep API credentials out of separate signed-storage upload requests.
+
 For writes, pass a JSON object as the fourth `request` argument, or `FormData` for multipart POST. DELETE accepts an empty 200/204 response when the fifth argument is `true`; use it for deletion endpoints that document an empty response. Deletion and remote cancellation are separate operations.
 
 The sixth `request` argument accepts `successfulResponseHandler` and `failedResponseHandler` using the AI SDK `ResponseHandler` contract. Use these for provider-specific decoding, such as lossless JSON, while retaining shared authentication and destination checks.

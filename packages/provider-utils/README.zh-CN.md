@@ -74,6 +74,8 @@ export async function readStatus({ baseURL, statusURL, apiKey, signal }) {
 
 传入 `AbortSignal`，例如 `new AbortController().signal`。transport 读取传入的服务端 `apiKey` 或 `CUSTOM_API_KEY` 环境变量，默认使用 Bearer 认证；需要 Key 认证的 API 可设置 `authorizationScheme: 'Key'`。远端调用使用供应商账号，可能计费。
 
+需要原始 API key 请求头时，设置 `apiKeyHeader: 'WLT-Api-Key'`（自 `0.1.5` 提供）。transport 将 key 直接作为该请求头的值，不添加 Bearer/Key 前缀；省略 `apiKeyHeader` 时保持已有 Authorization 行为。World Labs 使用此选项。独立的签名存储上传请求不得携带 API 凭据。
+
 写入时，将 JSON 对象作为 `request` 的第四个参数传入；multipart POST 则传入 `FormData`。第五个参数为 `true` 时，DELETE 接受空的 200/204 响应，适用于文档明确返回空响应的删除接口。删除和远端取消是不同操作。
 
 `request` 的第六个参数接受遵循 AI SDK `ResponseHandler` 契约的 `successfulResponseHandler` 和 `failedResponseHandler`。可用于无损 JSON 等供应商专用解码，同时保留共享认证与目的地校验。

@@ -2,7 +2,7 @@
 
 [English](PUBLISHING.md) | 简体中文
 
-九个包使用**独立版本**。只发布发生变更的包，按依赖顺序依次为：`@sinestack/ai-provider`、`@sinestack/ai-provider-utils`、`@sinestack/ai-core`、`@sinestack/ai-fal`、`@sinestack/ai-wavespeed`、`@sinestack/ai-replicate`、`@sinestack/ai-tripo`、`@sinestack/ai-meshy` 和 `@sinestack/ai-viggle`。未变更的包保留自己的版本和现有的精确依赖固定版本，即使依赖已有更新版本也不改变。
+十个包使用**独立版本**。只发布发生变更的包，按依赖顺序依次为：`@sinestack/ai-provider`、`@sinestack/ai-provider-utils`、`@sinestack/ai-core`、`@sinestack/ai-fal`、`@sinestack/ai-wavespeed`、`@sinestack/ai-replicate`、`@sinestack/ai-tripo`、`@sinestack/ai-meshy`、`@sinestack/ai-viggle` 和 `@sinestack/ai-worldlabs`。未变更的包保留自己的版本和现有的精确依赖固定版本，即使依赖已有更新版本也不改变。
 
 ## Pull Request 与版本规则
 
@@ -68,7 +68,7 @@ npm run verify:release
 | --- | --- | --- |
 | `npm run check` | 构建、公开/示例类型、行为测试、本地 Markdown 链接/代码围栏及无需密钥的本地示例 | 不调用提供方；只产生构建输出 |
 | `npm run check:upstream` | 已安装依赖版本和已登记的源码哈希 | 离线；不更新基线 |
-| `npm run verify:release` | 全部检查、九个包的 tarball、隔离使用方类型/运行时/本地示例，然后验证归档元数据/完整性 | 使用方安装访问 npm；写入本地构建产物；绝不发布 |
+| `npm run verify:release` | 全部检查、十个包的 tarball、隔离使用方类型/运行时/本地示例，然后验证归档元数据/完整性 | 使用方安装访问 npm；写入本地构建产物；绝不发布 |
 | `npm run release:dry-run` | 不提供基线引用时，验证已有本地归档 | 不调用注册表，也不调用 `npm publish` |
 | `npm run release:dry-run -- --base-ref origin/main` | 选择变更包、比较注册表完整性，并对尚未发布的选中版本运行 `npm publish --dry-run` | 读取 npm；不写入注册表；私有包可能需要读取认证 |
 | `npm run release:github -- --dry-run` | 验证保存的发布回执、打包清单、所有选中的 tarball 和源码身份；为每个包返回一个计划，包含其标签、标题、说明和两个附件（无包时返回空数组） | 离线；无需令牌；不写入 npm 或 GitHub |

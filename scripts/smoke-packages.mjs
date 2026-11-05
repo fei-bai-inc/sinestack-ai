@@ -63,6 +63,7 @@ try {
   run(process.execPath, ['tripo.mjs'], 120_000);
   run(process.execPath, ['meshy.mjs'], 120_000);
   run(process.execPath, ['viggle.mjs'], 120_000);
+  run(process.execPath, ['worldlabs.mjs'], 120_000);
   run(process.execPath, ['--experimental-strip-types', 'custom-provider.ts'], 30_000);
   console.log(`Independent npm consumer verified all ${names.length} package tarballs, public types, and runtime execution.`);
 } finally {

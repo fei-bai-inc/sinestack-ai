@@ -197,7 +197,7 @@ Durable workers, queues and automatic workflow composition remain application re
 
 Node 22/24 CI exercises old-provider regressions, all 18 Meshy business capabilities, native request bodies,
 results, invalid inputs, type inference, delete/cancel separation, credential routing, restore/no-resubmission,
-notifications and account resources. Release verification includes all nine tarballs in an independent consumer.
+notifications and account resources. Release verification includes all package tarballs in an independent consumer.
 Mock coverage and local release verification are distinct from a successful provider integration.
 
 Not yet verified for Meshy: live account entitlements/credits, every version/parameter combination, actual webhook
@@ -221,7 +221,7 @@ still uses Fetch's `redirect: 'error'`. These tests perform no paid API call, np
 
 ## Independent package release
 
-Meshy is one of nine independently versioned packages registered in release order and isolated
+Meshy is one of the independently versioned packages registered in release order and isolated
 consumer validation. Dependency pins are per-package compatibility choices, not a requirement that
 all workspace versions match. Consult the package manifests for current versions; the initial
 Meshy release numbers are not installation requirements for later releases.

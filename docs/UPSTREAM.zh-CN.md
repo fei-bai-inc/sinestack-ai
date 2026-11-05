@@ -50,7 +50,7 @@ export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 | 方面 | 当前约定 |
 |---|---|
 | 基础重试 | 直接使用 `prepareRetries`，不再提供资产层的 initial/max delay 或 retry callbacks。 |
-| HTTP | 默认策略下 GET 与 JSON/multipart POST 使用公开 SDK helpers；PUT/DELETE 与 raw manual 请求使用受限的单次 fetch 及兼容 SDK 的 handlers。当前 `request` 接受逐调用解码器；`requestRaw` 将 body 所有权交给调用方。当前 transport 使用物理 manual 重定向并在逻辑上默认拒绝；旧版固定依赖仍使用 Fetch error 模式。Tripo/Viggle 签名上传与 API 凭据分离。 |
+| HTTP | 默认策略下 GET 与 JSON/multipart POST 使用公开 SDK helpers；PUT/DELETE 与 raw manual 请求使用受限的单次 fetch 及兼容 SDK 的 handlers。当前 `request` 接受逐调用解码器；`requestRaw` 将 body 所有权交给调用方。当前 transport 使用物理 manual 重定向并在逻辑上默认拒绝；旧版固定依赖仍使用 Fetch error 模式。Tripo/Viggle/World Labs 签名上传与 API 凭据分离。 |
 | 阶段选择 | 提交/直接执行/取消/删除默认 0 次重试，status 默认 2 次；正数提交或直接执行重试需要 provider 幂等能力。 |
 | Signal | 使用 `mergeAbortSignals` 的合作式取消，不保证强制结束忽略 signal 的 provider 或 hook。 |
 | Callbacks | 使用 `mergeCallbacks`：await，忽略回调错误。只作观测，关键持久化在 `startAsset` / `startTask` 返回后显式 await。 |
@@ -61,6 +61,8 @@ export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 | 自定义 sleep | `poll.delay` 只替换 polling sleep，不引入持久化调度或重放。 |
 
 Viggle 使用 transport 扩展实现无损 JSON、专用错误处理、单条 SSE 流与签名下载重定向查询。这些是供应商协议操作，不是另一套重试/轮询引擎。handler 优先级、raw 响应所有权与重定向策略详见[共享 transport 契约](ARCHITECTURE.zh-CN.md#共享-transport-扩展)。
+
+World Labs 使用 provider-utils `0.1.5` 的 `apiKeyHeader: 'WLT-Api-Key'` 完成原始 API key 认证。原生操作复用已有资产生命周期与共享轮询；签名上传仍是独立单次 PUT。现有 provider 依赖固定版本和上游 SDK 版本保持不变。详见 [World Labs 指南](WORLDLABS.zh-CN.md)。
 
 这些差异与边界是明确选择，不应在升级时机械覆盖。早期 API 收缩的历史记录见 [MIGRATION.md](MIGRATION.zh-CN.md)；它不是当前 npm 发布状态声明。
 

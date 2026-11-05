@@ -2,7 +2,7 @@
 
 English | [简体中文](PUBLISHING.zh-CN.md)
 
-The nine packages have **independent versions**. Only changed packages are published, in dependency order: `@sinestack/ai-provider`, `@sinestack/ai-provider-utils`, `@sinestack/ai-core`, `@sinestack/ai-fal`, `@sinestack/ai-wavespeed`, `@sinestack/ai-replicate`, `@sinestack/ai-tripo`, `@sinestack/ai-meshy`, and `@sinestack/ai-viggle`. An unchanged package keeps its own version and its existing exact dependency pins, even when a newer dependency exists.
+The ten packages have **independent versions**. Only changed packages are published, in dependency order: `@sinestack/ai-provider`, `@sinestack/ai-provider-utils`, `@sinestack/ai-core`, `@sinestack/ai-fal`, `@sinestack/ai-wavespeed`, `@sinestack/ai-replicate`, `@sinestack/ai-tripo`, `@sinestack/ai-meshy`, `@sinestack/ai-viggle`, and `@sinestack/ai-worldlabs`. An unchanged package keeps its own version and its existing exact dependency pins, even when a newer dependency exists.
 
 ## Pull request and version rules
 
@@ -68,7 +68,7 @@ The version check compares the current working tree (including untracked files) 
 | --- | --- | --- |
 | `npm run check` | Build, public/example types, behavioral tests, local Markdown links/fences, and the no-key local example | No provider calls; build output only |
 | `npm run check:upstream` | Installed dependency versions and registered source hashes | Offline; does not update the baseline |
-| `npm run verify:release` | All checks, nine package tarballs, isolated consumer types/runtime/local example, then archive metadata/integrity validation | Consumer installation accesses npm; writes local build artifacts; never publishes |
+| `npm run verify:release` | All checks, ten package tarballs, isolated consumer types/runtime/local example, then archive metadata/integrity validation | Consumer installation accesses npm; writes local build artifacts; never publishes |
 | `npm run release:dry-run` | Validate existing local archives without a base ref | No registry calls and no `npm publish` invocation |
 | `npm run release:dry-run -- --base-ref origin/main` | Select changed packages, compare registry integrity, and run `npm publish --dry-run` for unpublished selected versions | Reads npm; no registry writes; private packages may need read authentication |
 | `npm run release:github -- --dry-run` | Validate the saved publication receipt, packed manifest, all selected tarballs and source identity; return one plan per package with its tag, title, notes and two attachments (an empty array for no packages) | Offline; no token required; no npm or GitHub writes |

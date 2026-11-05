@@ -20,13 +20,14 @@ Provider 包是这些协议的具体实现，既可直接使用，也可作为�
 
 ## 已实现的 Provider
 
-基于上述协议，库中已实现六个可直接使用的 provider 包，提供带类型的模型与任务接口。各包指南包含安装、凭据配置、原生参数和使用示例。
+基于上述协议，库中已实现七个可直接使用的 provider 包，提供带类型的模型与任务接口。各包指南包含安装、凭据配置、原生参数和使用示例。
 
 | Provider | 包名 | 主要能力 |
 |---|---|---|
 | [Tripo](packages/tripo/README.zh-CN.md) | `@sinestack/ai-tripo` | 3D/图像生成、模型处理、骨骼检查、绑定与动画 |
 | [Meshy](packages/meshy/README.zh-CN.md) | `@sinestack/ai-meshy` | 3D/图像生成、预览/细化、打印分析、绑定、动画与独立动作 |
 | [Viggle](packages/viggle/README.zh-CN.md) | `@sinestack/ai-viggle` | 视频/图像生成、角色动画、动作导出与高斯泼溅场景 |
+| [World Labs](packages/worldlabs/README.zh-CN.md) | `@sinestack/ai-worldlabs` | Marble 世界生成、深度全景、泼溅/网格导出及世界/媒体资源 |
 | [fal](packages/fal/README.zh-CN.md) | `@sinestack/ai-fal` | 原生参数资产生成、队列状态、结果获取与取消 |
 | [WaveSpeed](packages/wavespeed/README.zh-CN.md) | `@sinestack/ai-wavespeed` | 原生参数资产生成、prediction 状态与结果映射 |
 | [Replicate](packages/replicate/README.zh-CN.md) | `@sinestack/ai-replicate` | 指定模型或固定版本的 prediction、状态、结果获取与取消 |
@@ -152,7 +153,7 @@ SDK 还提供常见任务领域的调用入口：
 
 - **编写接入：**[provider 协议](packages/provider/README.zh-CN.md)、[传输和映射工具](packages/provider-utils/README.zh-CN.md)、[自定义文件模型示例](examples/custom-provider.ts)。
 - **使用运行时：**[core API](packages/core/README.zh-CN.md)、[任务架构](docs/ARCHITECTURE.zh-CN.md)、[持久化示例](examples/submit-and-resume.ts)。
-- **Provider 指南：**[Tripo](docs/TRIPO.zh-CN.md)、[Meshy](docs/MESHY.zh-CN.md)、[Viggle](docs/VIGGLE.zh-CN.md)、[Media providers](docs/MEDIA_PROVIDERS.zh-CN.md)。
+- **Provider 指南：**[Tripo](docs/TRIPO.zh-CN.md)、[Meshy](docs/MESHY.zh-CN.md)、[Viggle](docs/VIGGLE.zh-CN.md)、[World Labs](docs/WORLDLABS.zh-CN.md)、[Media providers](docs/MEDIA_PROVIDERS.zh-CN.md)。
 - **项目参考：**[AI SDK 基线](docs/UPSTREAM.zh-CN.md)、[迁移](docs/MIGRATION.zh-CN.md)、[安全](SECURITY.zh-CN.md)、[workerd 检查](tests/workerd/README.zh-CN.md)。
 - **参与开发：**[贡献指南](CONTRIBUTING.zh-CN.md)、[发布流程](docs/PUBLISHING.zh-CN.md)、[变更记录](CHANGELOG.zh-CN.md)。
 
