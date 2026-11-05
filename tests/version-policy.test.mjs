@@ -6,9 +6,10 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { compareStableVersions } from '../scripts/version-policy.mjs';
+import { packageDirectories } from '../scripts/release.mjs';
 
 const sourceScripts = fileURLToPath(new URL('../scripts/', import.meta.url));
-const directories = ['provider', 'provider-utils', 'core', 'fal', 'wavespeed', 'replicate', 'tripo', 'meshy', 'viggle'];
+const directories = packageDirectories;
 const json = async (path, value) => { await mkdir(join(path, '..'), { recursive: true }); await writeFile(path, JSON.stringify(value, null, 2) + '\n'); };
 const git = (repo, ...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
 const cli = (repo, base = 'HEAD') => spawnSync(process.execPath, ['scripts/check-release-version.mjs', base], { cwd: repo, encoding: 'utf8' });

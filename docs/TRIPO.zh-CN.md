@@ -133,7 +133,7 @@ Tripo 订阅在账号级别配置；不要在创建任务请求中发送虚构�
 Smart UV 压缩/版本不一致、二进制模型内容/绑定保留，以及 Tripo 的 Cloudflare/workerd 部署。
 已有的 [Viggle/core workerd 检查](../tests/workerd/README.zh-CN.md) 不验证 Tripo 或其独立签名上传客户端。
 
-Tripo 和 Meshy 参与九包发布清单、归档验证及隔离使用方冒烟测试。
+Tripo 和 Meshy 参与发布清单、归档验证及隔离使用方冒烟测试。
 各包独立版本化；变更不会强制工作区版本同步。
 `verify:release` 以本地归档验证结束，而不是 npm 注册表 dry-run；
 只有显式带 `--base-ref` 的发布 dry-run 才会使用注册表检查和针对所选包的 npm dry-run。

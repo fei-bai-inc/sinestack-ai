@@ -20,13 +20,14 @@ Task results can contain files, reports, generated content, or resource records.
 
 ## Included providers
 
-The library includes six ready-to-use provider packages built on these contracts. Each package provides typed model and task interfaces; its guide covers installation, credentials, native parameters, and examples.
+The library includes seven ready-to-use provider packages built on these contracts. Each package provides typed model and task interfaces; its guide covers installation, credentials, native parameters, and examples.
 
 | Provider | Package | Capabilities |
 |---|---|---|
 | [Tripo](packages/tripo/README.md) | `@sinestack/ai-tripo` | 3D/image generation, model processing, rig checks, rigging, and animation |
 | [Meshy](packages/meshy/README.md) | `@sinestack/ai-meshy` | 3D/image generation, preview/refine, print analysis, rigging, animation, and motion |
 | [Viggle](packages/viggle/README.md) | `@sinestack/ai-viggle` | Video/image generation, character animation, motion export, and Gaussian-splat scenes |
+| [World Labs](packages/worldlabs/README.md) | `@sinestack/ai-worldlabs` | Marble world generation, depth panoramas, splat/mesh exports, and world/media resources |
 | [fal](packages/fal/README.md) | `@sinestack/ai-fal` | Native-input asset generation, queue status, results, and cancellation |
 | [WaveSpeed](packages/wavespeed/README.md) | `@sinestack/ai-wavespeed` | Native-input asset generation, prediction status, and result mapping |
 | [Replicate](packages/replicate/README.md) | `@sinestack/ai-replicate` | Named or pinned model predictions, status, results, and cancellation |
@@ -152,7 +153,7 @@ These interfaces retain domain-specific inputs and results while using the share
 
 - **Build an integration:** [provider contracts](packages/provider/README.md), [transport and mapping utilities](packages/provider-utils/README.md), [custom file model example](examples/custom-provider.ts).
 - **Use the runtime:** [core API](packages/core/README.md), [task architecture](docs/ARCHITECTURE.md), [persistence examples](examples/submit-and-resume.ts).
-- **Provider guides:** [Tripo](docs/TRIPO.md), [Meshy](docs/MESHY.md), [Viggle](docs/VIGGLE.md), [media providers](docs/MEDIA_PROVIDERS.md).
+- **Provider guides:** [Tripo](docs/TRIPO.md), [Meshy](docs/MESHY.md), [Viggle](docs/VIGGLE.md), [World Labs](docs/WORLDLABS.md), [media providers](docs/MEDIA_PROVIDERS.md).
 - **Project reference:** [AI SDK baseline](docs/UPSTREAM.md), [migration](docs/MIGRATION.md), [security](SECURITY.md), [workerd checks](tests/workerd/README.md).
 - **Contribute:** [development guide](CONTRIBUTING.md), [release process](docs/PUBLISHING.md), [changelog](CHANGELOG.md).
 

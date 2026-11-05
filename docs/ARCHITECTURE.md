@@ -48,11 +48,11 @@ The only entry point for internal dependencies is [internal/sdk.ts](../packages/
 export { mergeAbortSignals, prepareRetries, mergeCallbacks } from 'ai/internal';
 ```
 
-The dependency remains pinned exactly to ai@7.0.155; no second backoff, Retry-After, or generic abort engine has been introduced. Under the default redirect policy, GET, JSON POST, and multipart POST use public SDK helpers. PUT and DELETE use the destination-restricted, single-fetch path with SDK response handlers. Tripo and Viggle signed storage PUTs use separate requests without API credentials.
+The dependency remains pinned exactly to ai@7.0.155; no second backoff, Retry-After, or generic abort engine has been introduced. Under the default redirect policy, GET, JSON POST, and multipart POST use public SDK helpers. PUT and DELETE use the destination-restricted, single-fetch path with SDK response handlers. Tripo, Viggle, and World Labs signed storage PUTs use separate requests without API credentials.
 
 ### Shared Transport Extensions
 
-This section describes the current provider-utils source used by Viggle. fal/WaveSpeed/Replicate, Tripo, and Meshy retain older exact transport dependencies that use Fetch's `redirect: 'error'`; installing a newer top-level provider-utils does not replace those nested pins. The workerd evidence below is scoped accordingly.
+This section describes the current provider-utils source, including the transport extensions used by Viggle and World Labs. Existing adapters retain their exact dependency pins: fal/WaveSpeed/Replicate, Tripo, and Meshy use older transport versions with Fetch's `redirect: 'error'`. Installing newer top-level provider-utils does not replace nested pins. The workerd evidence below is scoped accordingly.
 
 `AssetProviderTransport.request(url, method, options, body?, allowEmpty?, handlers?)` returns `{ url, statusCode, value, response: { headers, body } }`. `options` requires `headers` and `abortSignal`. The fourth argument accepts a JSON object or, for POST only, `FormData`; DELETE rejects a request body. The fifth argument explicitly permits an empty HTTP 200/204 response, used for deletion endpoints. Without that opt-in, default generation decoding still requires valid JSON.
 
@@ -62,7 +62,9 @@ The sixth argument, `AssetProviderResponseHandlers`, can replace `successfulResp
 
 Before loading credentials, both methods validate the configured origin and path prefix. Connection authentication is applied after per-call headers. Every physical fetch uses `redirect: 'manual'` because workerd rejects Fetch's error mode. Default logical policy rejects non-success responses through the error handler; raw `'manual'` additionally returns only HTTP 301/302/303/307/308 without following `Location`. Already-followed responses or a changed response URL are rejected as non-retryable API errors. Custom fetch must honor manual mode; no adapter may follow redirects with API credentials.
 
-Signed storage clients remain separate: Viggle uses physical manual mode, rejects redirects, and sends only upload-plan headers; Tripo uses `redirect: 'error'`. Both omit browser credentials and API connection headers. Viggle's authenticated download lookup returns the signed URL without following it; the application controls the subsequent uncredentialed download.
+`AssetProviderTransportOptions.apiKeyHeader` (since provider-utils `0.1.5`) sends the raw API key in the selected header instead of constructing Authorization. World Labs selects `WLT-Api-Key`. Omitting it preserves Authorization and `authorizationScheme` behavior; no existing adapter dependency is upgraded implicitly.
+
+Signed storage clients remain separate: Viggle and World Labs use physical manual mode, reject redirects, and send only upload-plan headers; Tripo uses `redirect: 'error'`. All omit browser credentials and API connection headers. Viggle's authenticated download lookup returns the signed URL without following it; the application controls the subsequent uncredentialed download.
 
 ## Independent Semantics and Results
 
@@ -140,8 +142,8 @@ AssetFile can be URL, binary, or base64. URLs are not downloaded by default; mat
 
 Tripo import/check/rig/retarget and Meshy preview/refine are each saved and resumed as separate stages. A check reference is not inherently a model resource, and task IDs cannot be used directly across providers. If implicit workflows are offered in the future, they must have explicit stage states and persistence boundaries rather than masquerading as a single remote submission.
 
-Node 22/24 CI checks cover legacy provider regressions, domain runtime and type tests, mock contracts for 20 Tripo operations, 18 Meshy capabilities and Viggle, resumption, and upload/notification security. Release verification installs all nine `@sinestack/ai-*` tarballs outside the workspace to check public declarations and runtime calls. Packages are independently versioned; core's version script updates the public runtime's User-Agent, not the compatibility executor. This describes repository check scope, not a new verification result.
+Node 22/24 CI checks cover legacy provider regressions, domain runtime and type tests, mock contracts for 20 Tripo operations, 18 Meshy capabilities, Viggle and World Labs, resumption, and upload/notification security. Release verification installs all ten `@sinestack/ai-*` tarballs outside the workspace to check public declarations and runtime calls. Packages are independently versioned; core's version script updates the public runtime's User-Agent, not the compatibility executor. This describes repository check scope, not a new verification result.
 
 The [workerd fixture](../tests/workerd/README.md) records four real-runtime checks with mocked HTTP for Viggle/core recovery and lossless seeds, multipart Blob handling, SSE parsing, and signed uploads. This is not Cloudflare deployment or all-provider acceptance. Tests do not prove live API permissions, all model-version combinations, binary asset contents, Meshy Creative Lab/SSE support, or a durable scheduler.
 
-See [Tripo](TRIPO.md), [Meshy implementation and integration boundaries](MESHY.md), [Viggle](VIGGLE.md), [aggregator providers](MEDIA_PROVIDERS.md), [publishing](PUBLISHING.md), [the exact upstream baseline](UPSTREAM.md), and [historical migration](MIGRATION.md).
+See [Tripo](TRIPO.md), [Meshy implementation and integration boundaries](MESHY.md), [Viggle](VIGGLE.md), [World Labs](WORLDLABS.md), [aggregator providers](MEDIA_PROVIDERS.md), [publishing](PUBLISHING.md), [the exact upstream baseline](UPSTREAM.md), and [historical migration](MIGRATION.md).

@@ -18,6 +18,8 @@ export interface AssetProviderTransportOptions {
   readonly apiKey?: string;
   readonly environmentVariableName: string;
   readonly authorizationScheme?: 'Key' | 'Bearer';
+  /** Send the raw API key in this header instead of Authorization. */
+  readonly apiKeyHeader?: string;
   readonly fetch?: typeof globalThis.fetch;
   readonly headers?: Record<string, string>;
 }
@@ -131,9 +133,11 @@ export class AssetProviderTransport {
     const requestBody = body === undefined || formData !== undefined ? undefined : jsonObject(body, `${this.settings.provider} request body`);
     const headers = new Headers(this.settings.headers);
     new Headers(options.headers).forEach((header, key) => headers.set(key, header));
-    headers.set('Authorization', `${this.settings.authorizationScheme ?? 'Bearer'} ${loadApiKey({
+    const apiKey = loadApiKey({
       apiKey: this.settings.apiKey, environmentVariableName: this.settings.environmentVariableName, description: this.settings.provider,
-    })}`);
+    });
+    headers.set(this.settings.apiKeyHeader ?? 'Authorization', this.settings.apiKeyHeader
+      ? apiKey : `${this.settings.authorizationScheme ?? 'Bearer'} ${apiKey}`);
     headers.set('Accept', responseOptions.accept ?? 'application/json');
     if (requestBody !== undefined) headers.set('Content-Type', 'application/json');
     if (formData !== undefined) headers.delete('Content-Type');

@@ -151,7 +151,7 @@ shapes, Image-to-Image inputs-only behavior, Smart UV compression/version incons
 model content/rig preservation, and Cloudflare/workerd deployment. The recorded
 [Viggle/core workerd checks](../tests/workerd/README.md) do not verify Tripo or its separate signed upload client.
 
-Tripo and Meshy participate in the nine-package release manifest, archive validation and isolated
+Tripo and Meshy participate in the release manifest, archive validation and isolated
 consumer smoke tests. Packages are independently versioned; changes do not force a synchronized
 workspace version. `verify:release` ends with local archive validation, not an npm registry dry-run;
 only an explicit publish dry-run with `--base-ref` uses registry checks and selected-package npm

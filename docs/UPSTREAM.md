@@ -50,7 +50,7 @@ Upstream references: [official repository](https://github.com/vercel/ai), [ai 7.
 | Aspect | Current contract |
 |---|---|
 | Basic retries | Uses `prepareRetries` directly; the asset layer no longer provides initial/max delay or retry callbacks. |
-| HTTP | Default-policy GET and JSON/multipart POST use public SDK helpers; PUT/DELETE and raw manual requests use a guarded single fetch with SDK-compatible handlers. Current `request` accepts per-call decoders; `requestRaw` leaves body ownership to its caller. Current transport uses physical manual redirects and logical rejection by default; older pinned transport versions use Fetch error mode. Tripo/Viggle signed uploads stay separate from API credentials. |
+| HTTP | Default-policy GET and JSON/multipart POST use public SDK helpers; PUT/DELETE and raw manual requests use a guarded single fetch with SDK-compatible handlers. Current `request` accepts per-call decoders; `requestRaw` leaves body ownership to its caller. Current transport uses physical manual redirects and logical rejection by default; older pinned transport versions use Fetch error mode. Tripo/Viggle/World Labs signed uploads stay separate from API credentials. |
 | Stage selection | Submission/direct execution/cancellation/deletion default to 0 retries, status to 2; positive submission or direct-execution retries require provider idempotency support. |
 | Signals | Uses cooperative cancellation through `mergeAbortSignals`; it does not guarantee forcible termination of providers or hooks that ignore signals. |
 | Callbacks | Uses `mergeCallbacks`: await callbacks and ignore their errors. Observation only; critical persistence must be explicitly awaited after `startAsset` / `startTask` returns. |
@@ -61,6 +61,8 @@ Upstream references: [official repository](https://github.com/vercel/ai), [ai 7.
 | Custom sleep | `poll.delay` replaces only polling sleep and does not introduce durable scheduling or replay. |
 
 Viggle uses the transport extensions for lossless JSON, provider-specific errors, a single SSE stream, and signed-download redirect lookup. These are provider protocol operations, not another retry/polling engine. See [shared transport contracts](ARCHITECTURE.md#shared-transport-extensions) for handler precedence, raw response ownership, and redirect policies.
+
+World Labs uses provider-utils `0.1.5` with `apiKeyHeader: 'WLT-Api-Key'` for raw API-key authentication. Its native operations use the existing asset lifecycle and shared polling; signed uploads remain separate single PUTs. Existing provider dependency pins and upstream SDK versions are unchanged. See the [World Labs guide](WORLDLABS.md).
 
 These differences and boundaries are deliberate choices and must not be mechanically overwritten during upgrades. See [MIGRATION.md](MIGRATION.md) for the historical record of early API reductions; it is not a statement of current npm publication status.
 

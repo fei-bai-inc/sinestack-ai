@@ -9,6 +9,7 @@
     { "path": "packages/replicate" },
     { "path": "packages/tripo" },
     { "path": "packages/meshy" },
-    { "path": "packages/viggle" }
+    { "path": "packages/viggle" },
+    { "path": "packages/worldlabs" }
   ]
 }
